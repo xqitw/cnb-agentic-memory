@@ -66,6 +66,7 @@ include = [
     "src",
     "tests",
     "docs",
+    "skills",
     "README.md",
     "LICENSE",
     "CONTRIBUTING.md",

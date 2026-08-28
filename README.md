@@ -54,13 +54,14 @@ asyncio.run(main())
 | Python SDK | `from cam import CNBApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
 | CLI | `cam --help` | [docs/CLI.md](docs/CLI.md) | ✅ 已实现 |
 | MCP Server | `cam-mcp` | [docs/MCP.md](docs/MCP.md) | ✅ 已实现 |
-| Agent Skill | `npx skills add ...` | skills/ | 计划中 |
+| Agent Skill | `npx skills add ...` | [skills/cam-skill](skills/cam-skill/SKILL.md) | ✅ 已实现 |
 
 ## 文档
 
 - [SDK API 参考](docs/API.md) — 配置、错误处理、记忆语义层设计约定、记忆仓库前置条件
 - [CLI 参考](docs/CLI.md) — 命令清单、配置、错误处理
 - [MCP Server 参考](docs/MCP.md) — 接入配置、工具清单、智能体使用指导
+- [Agent Skill](skills/cam-skill/SKILL.md) — 智能体记忆系统使用技能
 
 ## 开发
 
