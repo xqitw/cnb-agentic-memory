@@ -1,0 +1,17 @@
+$:
+  vscode:
+    - docker:
+        image: docker.cnb.cool/xqitw/docker/dev-base:latest
+      runner:
+        cpus: 8
+      services:
+        - name: vscode
+          options:
+            onlyPreview: true
+            launch: dsh-web-launch
+            keepAliveTimeout: 12h
+            daemon: true
+        - docker
+      stages:
+        - name: vscode go
+          type: vscode:go
