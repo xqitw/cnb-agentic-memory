@@ -176,10 +176,12 @@ def test_invalid_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_non_positive_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CAM_TIMEOUT=0/负值回落默认（0 在 httpx 语义=永不超时，无合理用途）。"""
+    """CAM_TIMEOUT=0/负值/inf 回落默认（0 在 httpx 语义=永不超时）。"""
     monkeypatch.setenv("CAM_TIMEOUT", "0")
     assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
     monkeypatch.setenv("CAM_TIMEOUT", "-5")
+    assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
+    monkeypatch.setenv("CAM_TIMEOUT", "inf")
     assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
 
 

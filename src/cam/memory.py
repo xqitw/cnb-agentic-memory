@@ -6,13 +6,12 @@
 - title 由调用方（智能体）撰写，工具只保证不变量：前缀、长度上限、非空兜底
 - 软删除：PATCH state=closed + state_reason=not_planned，可 reopen 恢复
 - 超长拆分：单条记忆超过 MAX_BODY_BYTES 自动拆为多条，用 title 关联；
-  拆分必须无损（"".join(parts) == content），分隔符归属后段保证拼接还原
+  非空白内容恒无损（拆分只可能丢弃不含内容的纯空白分片）
 """
 
 from __future__ import annotations
 
 import asyncio
-from bisect import bisect_right
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -121,29 +120,22 @@ def _accumulate(units: list[str], limit: int = MAX_BODY_BYTES) -> list[str]:
 def _hard_cut(part: str) -> list[str]:
     """无分隔符的连续串按 UTF-8 字符边界硬切（码点切片不切半个字符）。
 
-    一次性建立码点到字节的前缀表，二分找切点，线性时间完成。
+    增量字节计数器单趟扫描：内存 O(输出)，避免前缀表的 O(n) int 列表放大。
     """
-    total = _byte_len(part)
-    prefix: list[int] = [0]
-    acc = 0
-    for ch in part:
-        acc += len(ch.encode("utf-8"))
-        prefix.append(acc)
-
     pieces: list[str] = []
-    start_cp = 0
-    start_byte = 0
-    while start_byte < total:
-        max_end = start_byte + MAX_BODY_BYTES
-        if max_end >= total:
-            pieces.append(part[start_cp:])
-            break
-        end_cp = bisect_right(prefix, max_end) - 1
-        if end_cp <= start_cp:  # 单字符即超限（MAX_BODY_BYTES >= 4 时不会发生）
-            end_cp = start_cp + 1
-        pieces.append(part[start_cp:end_cp])
-        start_byte = prefix[end_cp]
-        start_cp = end_cp
+    buf = ""
+    buf_bytes = 0
+    for ch in part:
+        ch_bytes = len(ch.encode("utf-8"))
+        if buf and buf_bytes + ch_bytes > MAX_BODY_BYTES:
+            pieces.append(buf)
+            buf = ch
+            buf_bytes = ch_bytes
+        else:
+            buf += ch
+            buf_bytes += ch_bytes
+    if buf:
+        pieces.append(buf)
     return pieces
 
 
@@ -152,7 +144,8 @@ def _split_body(content: str) -> list[str]:
 
     三级拆分点：空行段落 → 单行 → 硬切（UTF-8 字符边界，覆盖长 URL、
     base64、minified JSON 等不含换行的连续串）。
-    恒满足 "".join(parts) == content：分隔符随单元保留，聚合为纯拼接。
+    内容无损：非空白内容恒出现在输出中；纯空白分片（仅分隔符，无内容）
+    会被丢弃，避免建出空白记忆（丢弃的只有分隔符，无信息损失）。
     """
     if _byte_len(content) <= MAX_BODY_BYTES:
         return [content]
@@ -171,19 +164,16 @@ def _split_body(content: str) -> list[str]:
             bounded.append(part)
             continue
         lines = part.splitlines(keepends=True)
-        # splitlines 会丢掉末尾换行符——原文以换行结尾时补回末行
-        if part.endswith("\n") and lines and not lines[-1].endswith("\n"):
-            lines[-1] += "\n"
         bounded.extend(_accumulate(lines))
 
-    # 第三轮：仍超限的片段为不含换行的连续串，硬切
+    # 第三轮：仍超限的片段为不含换行的连续串，硬切；丢弃纯空白分片
     final: list[str] = []
     for part in bounded:
         if _byte_len(part) <= MAX_BODY_BYTES:
             final.append(part)
             continue
         final.extend(_hard_cut(part))
-    return final or [content]
+    return [p for p in final if p.strip()] or [content]
 
 
 class Memory:
@@ -264,9 +254,10 @@ class Memory:
         all_labels = self._normalize_labels(tags, category)
         created: _List[WriteResult] = []
 
-        # 拆分时给 (i/n) 后缀预留预算，保证总长不超上限
-        title_budget = MAX_TITLE_CHARS - len(" (999/999)")
-        base_title = base_title[:title_budget] if len(parts) > 1 else base_title
+        # 拆分时按实际分片数算 (i/n) 后缀宽度并预留，保证总长不超上限
+        if len(parts) > 1:
+            suffix_width = len(f" ({len(parts)}/{len(parts)})")
+            base_title = base_title[: MAX_TITLE_CHARS - suffix_width]
 
         try:
             for index, part in enumerate(parts):

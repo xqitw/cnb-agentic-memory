@@ -240,17 +240,18 @@ def test_split_lossless_with_blank_lines() -> None:
 
 
 def test_split_fuzz_lossless() -> None:
-    """随机混合正文 fuzz：拆分恒无损且各片不超限（评审建议的 fuzz 断言）。"""
+    """随机混合正文 fuzz：段长跨过拆分阈值，非空白内容恒无损恒有界。"""
     import random
 
     from cam.memory import _split_body
 
     rng = random.Random(42)
+    split_count = 0
     for _ in range(60):
         segs = []
         for _ in range(rng.randint(1, 20)):
             kind = rng.random()
-            n = rng.randint(1, 1500)
+            n = rng.randint(1, 20000)
             if kind < 0.3:
                 segs.append("a" * n)
             elif kind < 0.5:
@@ -263,8 +264,13 @@ def test_split_fuzz_lossless() -> None:
         if rng.random() < 0.3:
             content += "\n\n"
         parts = _split_body(content)
-        assert "".join(parts) == content  # 恒无损
-        assert all(len(p.encode("utf-8")) <= 30000 for p in parts)  # 恒有界
+        if len(parts) > 1:
+            split_count += 1
+        # 非空白内容恒无损（纯空白分片会被丢弃，属预期语义）。
+        # 口径：按空白切词后的 token 序列完全一致——丢任何非空白字符都会暴露
+        assert "".join(parts).split() == content.split()
+        assert all(len(p.encode("utf-8")) <= 30000 for p in parts)
+    assert split_count > 0  # 用例必须真实进入拆分逻辑（评审 info：保证验证力）
 
 
 async def test_search_network_error_suggests_fallback(client: CnbApiClient) -> None:
@@ -368,11 +374,12 @@ async def test_update_labels_only(client: CnbApiClient) -> None:
 async def test_update_nothing_raises(client: CnbApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
-        # 未提供任何变更时直接拒绝，零网络调用（评审意见：空变更前置）
+        # 未提供任何变更时直接拒绝，零网络调用（评审意见：空变更前置）。
+        # 注意：断言必须在 mock 上下文内，call_count 才反映真实调用
         with pytest.raises(MemoryError, match="未指定任何变更"):
             await memory.update(5)
 
-    assert not mock.routes
+        assert mock.calls.call_count == 0  # 任何 HTTP 调用都算失败
 
 
 async def test_update_title_verified(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
