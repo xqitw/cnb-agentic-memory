@@ -10,7 +10,7 @@
 ## 安装
 
 ```bash
-uv add cnb-agentic-memory             # Python SDK
+uv add cnb-agentic-memory             # SDK + CLI
 uv add "cnb-agentic-memory[mcp]"       # 含 MCP Server（计划中）
 ```
 
@@ -52,13 +52,14 @@ asyncio.run(main())
 | 形态 | 用法 | 文档 | 状态 |
 | --- | --- | --- | --- |
 | Python SDK | `from cam import CnbApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
-| CLI | `cam --help` | docs/CLI.md | 计划中 |
+| CLI | `cam --help` | [docs/CLI.md](docs/CLI.md) | ✅ 已实现 |
 | MCP Server | `cam-mcp` | docs/MCP.md | 计划中 |
 | Agent Skill | `npx skills add ...` | skills/ | 计划中 |
 
 ## 文档
 
 - [SDK API 参考](docs/API.md) — 配置、错误处理、记忆语义层设计约定、记忆仓库前置条件
+- [CLI 参考](docs/CLI.md) — 命令清单、配置、错误处理
 
 ## 开发
 
