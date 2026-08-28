@@ -6,11 +6,11 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from cam import CnbApiClient
+from cam import CNBApiClient
 
 
 @pytest.fixture
-async def client() -> AsyncIterator[CnbApiClient]:
+async def client() -> AsyncIterator[CNBApiClient]:
     """带假 token/repo 的客户端（所有请求由 respx 拦截）。"""
-    async with CnbApiClient(token="test-token", repo="group/repo") as client:
+    async with CNBApiClient(token="test-token", repo="group/repo") as client:
         yield client

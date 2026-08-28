@@ -3,9 +3,9 @@
 `cnb-agentic-memory` 的 SDK 层是所有形态（CLI / MCP / Skill）的基座：架构红线（两步写入、写后回读校验、title 不变量、软删除）全部沉淀在此层，上层只是薄封装。
 
 ```python
-from cam import CnbApiClient, Memory
+from cam import CNBApiClient, Memory
 
-async with CnbApiClient(token="...", repo="group/memory") as client:
+async with CNBApiClient(token="...", repo="group/memory") as client:
     memory = Memory(client)
     result = await memory.write(
         "PostgreSQL 分区表使用 pg_partman 解决慢查询",
@@ -27,9 +27,9 @@ async with CnbApiClient(token="...", repo="group/memory") as client:
 
 ```python
 # 三种等价写法
-CnbApiClient(token="t", repo="g/r")  # 显式参数
-CnbApiClient()  # 全走 CAM_ 环境变量
-CnbApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
+CNBApiClient(token="t", repo="g/r")  # 显式参数
+CNBApiClient()  # 全走 CAM_ 环境变量
+CNBApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
 ```
 
 ## 错误处理
@@ -54,7 +54,7 @@ except ApiError as err:
 
 ## cam.api — CNB API 薄封装
 
-`CnbApiClient` 封装 9 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
+`CNBApiClient` 封装 9 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
 
 | 方法 | 端点 | 说明 |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ except ApiError as err:
 
 | 方法 | 说明 |
 | --- | --- |
-| `write(content, *, title, tags, category, verify)` | 写入记忆：创建 Issue → 补打标签（两步写入）→ 回读校验。返回 `WriteResult(number, title, url)` |
+| `write(content, *, title, tags, category, verify)` | 写入记忆：创建 Issue → 补打标签（两步写入）→ 回读校验。返回 `WriteResult(number, title, url, parts)` |
 | `update(number, *, content, title, tags, category, verify)` | 更新正文/标题/标签，回读校验。`content` 为全量替换 |
 | `append(number, note, *, verify)` | 追加更新记录（评论），进知识库可被语义检索 |
 | `delete(number, *, verify)` | 软删除（`state=closed` + `not_planned`），可恢复 |
@@ -93,7 +93,7 @@ except ApiError as err:
 - **title 撰写权在调用方**：keyword 检索只匹配标题，title 由智能体撰写（提炼高区分度关键词短语）；未提供时兜底为正文首行截取。工具只保证不变量：`cam:` 前缀 + ≤60 字符。MCP 与 Skill 层需在工具描述中给智能体明确的 title 撰写指导
 - **两步写入**：创建时不传 labels（服务端对新标签静默丢弃），创建后单独补打
 - **写后回读校验**：写操作 GET 回读确认，短重试（3 次 × 0.5s）后仍不一致才报错；`verify=False` 可跳过（仅测试）
-- **超长拆分**：正文超过 30KB 自动按段落拆为多条，title 带 `(i/n)` 序号关联
+- **超长拆分**：正文超过 30KB 自动按段落拆为多条，title 带 `(i/n)` 序号关联；`WriteResult.parts` 携带全部分片供循迹
 - **软删除**：无硬删除接口（CNB DELETE 返回 404），`delete` 后可 `restore`
 - **标签命名空间**：`tags` 自动补 `tag/` 前缀、`category` 补 `category/` 前缀（已带前缀则原样保留，幂等）
 - **检索分层**：主通道知识库向量召回（实测 0.98+），降级通道 `client.list_issues(keyword=...)` 标题检索
@@ -106,7 +106,7 @@ except ApiError as err:
 | --- | --- |
 | `Issue` | `number`（唯一标识）/ `title` / `body` / `state` / `labels` / `created_at` / `updated_at` |
 | `Comment` | `id` / `body` / `created_at` |
-| `WriteResult` | `number` / `title` / `url` |
+| `WriteResult` | `number` / `title` / `url`；`parts`（全部分片，单分片为空元组） |
 | `SearchResult` | `score` / `chunk` / `number` / `title` / `state` / `url` |
 | `KbChunk` | `score` / `chunk` / `metadata`；`number` 属性从 `metadata.path` 解析 |
 | `KnowledgeBase` | `id` / `issue_sync_enabled`（降级判定） |

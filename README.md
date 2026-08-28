@@ -1,4 +1,4 @@
-# Cnb Agentic Memory (CAM)
+# CNB Agentic Memory (CAM)
 
 基于 [CNB](https://cnb.cool) 平台的通用智能体记忆工具：以 Issue 为存储、知识库为语义检索，把 CNB 的 Issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。
 
@@ -10,7 +10,7 @@
 ## 安装
 
 ```bash
-uv add cnb-agentic-memory             # Python SDK
+uv add cnb-agentic-memory             # SDK + CLI
 uv add "cnb-agentic-memory[mcp]"       # 含 MCP Server（计划中）
 ```
 
@@ -19,11 +19,11 @@ uv add "cnb-agentic-memory[mcp]"       # 含 MCP Server（计划中）
 ```python
 import asyncio
 
-from cam import CnbApiClient, Memory
+from cam import CNBApiClient, Memory
 
 
 async def main() -> None:
-    async with CnbApiClient(token="<token>", repo="group/memory") as client:
+    async with CNBApiClient(token="<token>", repo="group/memory") as client:
         memory = Memory(client)
 
         # 写入：两步写入 + 回读校验；title 由调用方撰写（建议提炼关键词短语，
@@ -51,14 +51,15 @@ asyncio.run(main())
 
 | 形态 | 用法 | 文档 | 状态 |
 | --- | --- | --- | --- |
-| Python SDK | `from cam import CnbApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
-| CLI | `cam --help` | docs/CLI.md | 计划中 |
+| Python SDK | `from cam import CNBApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
+| CLI | `cam --help` | [docs/CLI.md](docs/CLI.md) | ✅ 已实现 |
 | MCP Server | `cam-mcp` | docs/MCP.md | 计划中 |
 | Agent Skill | `npx skills add ...` | skills/ | 计划中 |
 
 ## 文档
 
 - [SDK API 参考](docs/API.md) — 配置、错误处理、记忆语义层设计约定、记忆仓库前置条件
+- [CLI 参考](docs/CLI.md) — 命令清单、配置、错误处理
 
 ## 开发
 

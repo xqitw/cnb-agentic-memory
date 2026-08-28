@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cnb-agentic-memory"
 version = "1.0.0"
-description = "Cnb Agentic Memory （简称CAM)  是基于 CNB 平台构建的通用记忆工具，把 CNB 的 issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。"
+description = "CNB Agentic Memory （简称CAM)  是基于 CNB 平台构建的通用记忆工具，把 CNB 的 issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -31,7 +31,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-dependencies = ["httpx>=0.27"]
+dependencies = [
+    "httpx>=0.27",
+    # typer 0.x 有破坏性变更先例，上界对齐 mcp 的处理方式
+    "typer>=0.27.2,<1",
+]
 
 [project.optional-dependencies]
 # MCP server（upper bound 强制：mcp v2 移除 fastmcp 兼容路径）
@@ -45,7 +49,9 @@ dev = [
     "mcp>=1.2.0,<2",
 ]
 
-# CLI / MCP 入口随 P2（cam.cli）与 P3（cam.mcp_server）实现时添加
+[project.scripts]
+cam = "cam.cli:main"
+
 [project.urls]
 Homepage = "https://cnb.cool/xqitw/cnb-agentic-memory"
 Repository = "https://cnb.cool/xqitw/cnb-agentic-memory"
@@ -77,6 +83,10 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# typer 官方模式即 Option() 作为参数默认值，B008 在 CLI 模块中不适用
+"src/cam/cli.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"
