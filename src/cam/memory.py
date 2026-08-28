@@ -6,7 +6,7 @@
 - title 由调用方（智能体）撰写，工具只保证不变量：前缀、长度上限、非空兜底
 - 软删除：PATCH state=closed + state_reason=not_planned，可 reopen 恢复
 - 超长拆分：单条记忆超过 MAX_BODY_BYTES 自动拆为多条，用 title 关联；
-  非空白内容恒无损（拆分只可能丢弃不含内容的纯空白分片）
+  拆分强无损（"".join(parts) == content 恒成立），分隔符不丢不粘
 """
 
 from __future__ import annotations
@@ -98,6 +98,8 @@ def _accumulate(units: list[str], limit: int = MAX_BODY_BYTES) -> list[str]:
     """把单元（段落/行）聚合为不超过 limit 字节的片段。
 
     分隔符随单元保留（单元自带换行），聚合为纯拼接，保证拼接无损。
+    纯空白 unit 无条件并入当前 buf（不触发切分）——它是前后内容的
+    分隔符，单独成片再丢弃会把两段内容粘成一个 token（有损合并）。
     字节计数器增量判断，避免对递增 buffer 反复全量编码（线性时间）。
     """
     parts: list[str] = []
@@ -105,7 +107,8 @@ def _accumulate(units: list[str], limit: int = MAX_BODY_BYTES) -> list[str]:
     buf_bytes = 0
     for unit in units:
         unit_bytes = len(unit.encode("utf-8"))
-        if buf and buf_bytes + unit_bytes > limit:
+        if buf and buf_bytes + unit_bytes > limit and unit.strip():
+            # 仅当 unit 含内容时才允许切分；纯空白 unit 恒并入当前 buf
             parts.append(buf)
             buf = unit
             buf_bytes = unit_bytes
@@ -144,8 +147,8 @@ def _split_body(content: str) -> list[str]:
 
     三级拆分点：空行段落 → 单行 → 硬切（UTF-8 字符边界，覆盖长 URL、
     base64、minified JSON 等不含换行的连续串）。
-    内容无损：非空白内容恒出现在输出中；纯空白分片（仅分隔符，无内容）
-    会被丢弃，避免建出空白记忆（丢弃的只有分隔符，无信息损失）。
+    强无损红线："".join(parts) == content 恒成立（分隔符随单元保留、
+    纯空白 unit 不切分，任何分片都不会被丢弃）。
     """
     if _byte_len(content) <= MAX_BODY_BYTES:
         return [content]
@@ -166,14 +169,14 @@ def _split_body(content: str) -> list[str]:
         lines = part.splitlines(keepends=True)
         bounded.extend(_accumulate(lines))
 
-    # 第三轮：仍超限的片段为不含换行的连续串，硬切；丢弃纯空白分片
+    # 第三轮：仍超限的片段为不含换行的连续串，硬切
     final: list[str] = []
     for part in bounded:
         if _byte_len(part) <= MAX_BODY_BYTES:
             final.append(part)
             continue
         final.extend(_hard_cut(part))
-    return [p for p in final if p.strip()] or [content]
+    return final
 
 
 class Memory:

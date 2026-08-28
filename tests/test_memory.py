@@ -240,7 +240,7 @@ def test_split_lossless_with_blank_lines() -> None:
 
 
 def test_split_fuzz_lossless() -> None:
-    """随机混合正文 fuzz：段长跨过拆分阈值，非空白内容恒无损恒有界。"""
+    """随机混合正文 fuzz：段长跨过三级拆分阈值（含硬切），恒强无损恒有界。"""
     import random
 
     from cam.memory import _split_body
@@ -251,7 +251,7 @@ def test_split_fuzz_lossless() -> None:
         segs = []
         for _ in range(rng.randint(1, 20)):
             kind = rng.random()
-            n = rng.randint(1, 20000)
+            n = rng.randint(1, 40000)  # 上限超 30000，确保硬切路径被覆盖
             if kind < 0.3:
                 segs.append("a" * n)
             elif kind < 0.5:
@@ -266,11 +266,10 @@ def test_split_fuzz_lossless() -> None:
         parts = _split_body(content)
         if len(parts) > 1:
             split_count += 1
-        # 非空白内容恒无损（纯空白分片会被丢弃，属预期语义）。
-        # 口径：按空白切词后的 token 序列完全一致——丢任何非空白字符都会暴露
-        assert "".join(parts).split() == content.split()
+        # 强无损：拼接恒等（含分隔符），纯空白分片不再被丢弃
+        assert "".join(parts) == content
         assert all(len(p.encode("utf-8")) <= 30000 for p in parts)
-    assert split_count > 0  # 用例必须真实进入拆分逻辑（评审 info：保证验证力）
+    assert split_count > 0  # 用例必须真实进入拆分逻辑
 
 
 async def test_search_network_error_suggests_fallback(client: CnbApiClient) -> None:
