@@ -203,10 +203,13 @@ async def memory_search(
 async def memory_keyword_search(
     query: str,
     limit: int = 20,
+    include_closed: bool = False,
 ) -> str:
     """关键词标题检索记忆。"""
     async with CNBApiClient() as client:
-        issues = await Memory(client).keyword_search(query, limit=max(1, min(limit, 100)))
+        issues = await Memory(client).keyword_search(
+            query, limit=max(1, min(limit, 100)), include_closed=include_closed
+        )
         return json.dumps([_issue_out(i) for i in issues], ensure_ascii=False)
 
 

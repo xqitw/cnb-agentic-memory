@@ -56,7 +56,7 @@ pip install "cnb-agentic-memory[mcp]"
 }
 ```
 
-## 工具清单（9 个）
+## 工具清单（10 个）
 
 | 工具 | 对应 SDK 方法 | 说明 |
 | --- | --- | --- |
@@ -69,11 +69,13 @@ pip install "cnb-agentic-memory[mcp]"
 | `memory_list` | `Memory.list` | 按分类/标签过滤列表（`state` 仅支持 `open/closed`） |
 | `memory_list_recent` | `Memory.list_recent` | 最近更新的记忆 |
 | `memory_search` | `Memory.search` | 语义检索（知识库召回 + 回读补齐元信息，默认过滤已删除） |
+| `memory_keyword_search` | `Memory.keyword_search` | 关键词标题检索（仅匹配标题；title 含确切关键词时更精准） |
 
 ## 使用指导（写给调用智能体）
 
 - **写入时务必写好 title**：keyword 标题检索只匹配 title，它是主检索通道（知识库）故障时唯一的找回途径。好的 title 是「高区分度关键词的短语」，不是句子
-- **检索优先用 `memory_search`**（语义召回 0.98+）；按已知分类浏览用 `memory_list`
+- **检索按需选路**：按内容模糊查找用 `memory_search`（语义召回 0.98+）；
+  title 含确切关键词（技术名词/编号/命令）用 `memory_keyword_search` 更精准
 - **`memory_update` 的 content 是全量替换**：只想追加信息时用 `memory_append`
 - **`memory_delete` 是软删除**：可随时 `memory_restore` 恢复，不要害怕删错
 - **错误处理**：工具返回的错误文本携带 CNB 原始信息（状态码/原因），请据此自行决策重试、换参数或放弃；仓库未配置知识库流水线时 `memory_search` 会失败并提示降级

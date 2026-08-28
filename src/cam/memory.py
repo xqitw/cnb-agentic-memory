@@ -390,25 +390,33 @@ class Memory:
         """最近更新的记忆（一次请求）。"""
         return await self.client.list_issues(state=STATE_OPEN, order_by="-updated_at", page_size=limit)
 
-    async def keyword_search(self, query: str, *, limit: int = 20) -> _List[Issue]:
+    async def keyword_search(
+        self, query: str, *, limit: int = 20, include_closed: bool = False
+    ) -> _List[Issue]:
         """关键词标题检索（与语义检索并列的第二检索方法，按需选择）。
 
         - 仅匹配标题（CNB keyword 检索特性），无法检索正文——title 是
           关键词摘要正因此关键
-        - state 不支持 all，分 open/closed 各查一次后合并（按 number 去重）
-        - 适用场景：记忆 title 中含有确切关键词（如技术名词、编号）时，
-          比语义检索更精准直接
+        - 仅返回 cam 管理的记忆（按命名空间标签过滤，普通 Issue 不混入）
+        - CNB state 不支持 all，分 open/closed 各查一次后合并（按 number 去重，
+          按 updated_at 降序，与列表/语义检索的时序语义一致）
+        - include_closed=False（默认）仅返回 open 记忆
         """
         if not query.strip():
             raise MemoryError("检索词不能为空")
         seen: dict[int, Issue] = {}
-        for state in (STATE_OPEN, STATE_CLOSED):
+        states = (STATE_OPEN,) if not include_closed else (STATE_OPEN, STATE_CLOSED)
+        for state in states:
             issues = await self.client.list_issues(
-                state=state, keyword=query, order_by="-updated_at", page_size=max(limit, 1)
+                state=state,
+                keyword=query,
+                order_by="-updated_at",
+                page_size=max(limit, 1),
+                labels=[CATEGORY_PREFIX, TAG_PREFIX],
             )
             for issue in issues:
                 seen.setdefault(issue.number, issue)
-        return sorted(seen.values(), key=lambda i: i.number, reverse=True)[:limit]
+        return sorted(seen.values(), key=lambda i: i.updated_at or "", reverse=True)[:limit]
 
     async def search(
         self,
