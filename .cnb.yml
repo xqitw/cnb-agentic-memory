@@ -1,4 +1,63 @@
+# CI:测试 + 类型检查 + 发布到公网 PyPI + code-wiki + git release
+# 结构对齐 xqitw/journapi:
+#   - main 分支 PR:跑测试(ruff + mypy + pytest + markdownlint)
+#   - 打 tag (v*):测试 -> 构建发布 PyPI -> code-wiki -> git release
+# 额外挂载:记忆仓库的 issue 事件触发知识库同步(见 $ 分支)
+#
+# 引入 xqitw/pipes 模板聚合文件,提供 .code-wiki-pipeline / .release-pipeline
+include:
+  - https://cnb.cool/xqitw/pipes/-/blob/main/tpl/include.yml
+
+# 复用片段:测试环境
+.test-base: &test-base
+  docker:
+    image: docker.cnb.cool/xqitw/docker/dev-base:latest
+  runner:
+    cpus: 2
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+
+# 复用片段:测试步骤
+.test-stages: &test-stages
+  - name: 同步依赖
+    script: uv sync --extra dev
+  - name: ruff lint
+    script: uv run ruff check .
+  - name: ruff format check
+    script: uv run ruff format --check .
+  - name: mypy
+    script: uv run mypy src tests
+  - name: pytest
+    script: uv run pytest -v
+  - name: markdownlint
+    script: npx --yes markdownlint-cli2 'README.md' 'CONTRIBUTING.md' 'SECURITY.md' 'AGENTS.md' 'docs/*.md'
+
+# 复用片段:发布到公网 PyPI
+# 密钥来自 xqitw/api-key 的 env-pypi.yml(PYPI_API_KEY,pypi- 开头 token)
+.pypi-publish: &pypi-publish
+  docker:
+    image: ghcr.io/astral-sh/uv:python3.12-trixie
+  runner:
+    cpus: 2
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+  imports:
+    - https://cnb.cool/xqitw/api-key/-/blob/main/env-pypi.yml
+  stages:
+    - name: 构建 sdist + wheel
+      script: uv build
+    - name: 发布到公网 PyPI
+      env:
+        UV_PUBLISH_TOKEN: $PYPI_API_KEY
+      script: uv publish
+
+main:
+  pull_request:
+    - <<: *test-base
+      stages: *test-stages
+
 $:
+  # 云原生开发环境
   vscode:
     - docker:
         image: docker.cnb.cool/xqitw/docker/dev-base:latest
@@ -15,3 +74,7 @@ $:
       stages:
         - name: vscode go
           type: vscode:go
+  # 打 tag (v*):测试 + 发 PyPI + code-wiki + git release
+  tag_push:
+    - <<: *pypi-publish
+    - !reference [.code-wiki-pipeline]
