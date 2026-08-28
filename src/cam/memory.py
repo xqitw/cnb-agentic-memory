@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from .api import ApiError, CnbApiClient
+from .api import ApiError, CNBApiClient
 from .models import Comment, CreateCommentForm, CreateIssueForm, Issue, KbChunk, PatchIssueForm
 
 if TYPE_CHECKING:
@@ -188,7 +188,7 @@ def _split_body(content: str) -> list[str]:
 class Memory:
     """记忆操作门面（一记忆 = 一 Issue，number 即记忆唯一标识）。"""
 
-    def __init__(self, client: CnbApiClient) -> None:
+    def __init__(self, client: CNBApiClient) -> None:
         self.client = client
 
     # ---- 内部工具 ----

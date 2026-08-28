@@ -3,9 +3,9 @@
 `cnb-agentic-memory` 的 SDK 层是所有形态（CLI / MCP / Skill）的基座：架构红线（两步写入、写后回读校验、title 不变量、软删除）全部沉淀在此层，上层只是薄封装。
 
 ```python
-from cam import CnbApiClient, Memory
+from cam import CNBApiClient, Memory
 
-async with CnbApiClient(token="...", repo="group/memory") as client:
+async with CNBApiClient(token="...", repo="group/memory") as client:
     memory = Memory(client)
     result = await memory.write(
         "PostgreSQL 分区表使用 pg_partman 解决慢查询",
@@ -27,9 +27,9 @@ async with CnbApiClient(token="...", repo="group/memory") as client:
 
 ```python
 # 三种等价写法
-CnbApiClient(token="t", repo="g/r")  # 显式参数
-CnbApiClient()  # 全走 CAM_ 环境变量
-CnbApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
+CNBApiClient(token="t", repo="g/r")  # 显式参数
+CNBApiClient()  # 全走 CAM_ 环境变量
+CNBApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
 ```
 
 ## 错误处理
@@ -54,7 +54,7 @@ except ApiError as err:
 
 ## cam.api — CNB API 薄封装
 
-`CnbApiClient` 封装 9 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
+`CNBApiClient` 封装 9 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
 
 | 方法 | 端点 | 说明 |
 | --- | --- | --- |

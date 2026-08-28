@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from cam import ApiError, CnbApiClient, Memory, MemoryError, normalize_title
+from cam import ApiError, CNBApiClient, Memory, MemoryError, normalize_title
 
 BASE = "https://api.cnb.cool"
 
@@ -77,7 +77,7 @@ def test_normalize_title_blank_content_fallback() -> None:
 # ---- memory.write：两步写入 + 回读校验 ----
 
 
-async def test_write_two_steps_and_verify(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_write_two_steps_and_verify(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
@@ -93,7 +93,7 @@ async def test_write_two_steps_and_verify(client: CnbApiClient, monkeypatch: pyt
 
 
 async def test_write_creates_issue_without_labels_payload(
-    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+    client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """创建请求体不应携带 labels（新标签会被服务端静默丢弃，类型层已锁死）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
@@ -108,13 +108,13 @@ async def test_write_creates_issue_without_labels_payload(
     assert "labels" not in payload
 
 
-async def test_write_rejects_empty_content(client: CnbApiClient) -> None:
+async def test_write_rejects_empty_content(client: CNBApiClient) -> None:
     memory = Memory(client)
     with pytest.raises(MemoryError, match="不能为空"):
         await memory.write("   ")
 
 
-async def test_write_verify_failure_raises(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_write_verify_failure_raises(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """创建返回 201 但回读不一致 → 报写路径校验失败（静默失败形态）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
@@ -127,7 +127,7 @@ async def test_write_verify_failure_raises(client: CnbApiClient, monkeypatch: py
             await memory.write("内容", verify=True)
 
 
-async def test_write_splits_long_content(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_write_splits_long_content(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = ("段落。\n\n" + "x" * 20000) * 3
@@ -156,7 +156,7 @@ async def test_write_splits_long_content(client: CnbApiClient, monkeypatch: pyte
     assert all(len(t) <= 60 for t in created.values())  # title 含序号后缀仍不超上限
 
 
-async def test_write_splits_single_long_line(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_write_splits_single_long_line(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """无空行的超长单行（代码块/长文本）也能被按行拆分（评审意见：保底按行）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
@@ -187,7 +187,7 @@ async def test_write_splits_single_long_line(client: CnbApiClient, monkeypatch: 
 
 
 async def test_write_splits_no_newline_hard_cut(
-    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+    client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """不含任何换行的连续串（长 URL/base64 等）按 UTF-8 字符边界硬切。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
@@ -272,7 +272,7 @@ def test_split_fuzz_lossless() -> None:
     assert split_count > 0  # 用例必须真实进入拆分逻辑
 
 
-async def test_search_network_error_suggests_fallback(client: CnbApiClient) -> None:
+async def test_search_network_error_suggests_fallback(client: CNBApiClient) -> None:
     """知识库网络异常（非 404）同样触发 MemoryError 降级提示（评审 warning）。"""
     import httpx as httpx_mod
 
@@ -296,7 +296,7 @@ def test_title_suffix_fits_limit_for_large_split_count() -> None:
 
 
 async def test_write_single_label_failure_reports_number(
-    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+    client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """主路径（单条）创建成功但补标签失败：MemoryError 携带已落盘编号（评审意见：与拆分路径标准一致）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
@@ -311,7 +311,7 @@ async def test_write_single_label_failure_reports_number(
 
 
 async def test_write_partial_failure_reports_created(
-    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+    client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """多分片写入中途失败：MemoryError 携带已创建分片编号（评审意见：孤儿 Issue 可循迹）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
@@ -335,7 +335,7 @@ async def test_write_partial_failure_reports_created(
 
 
 async def test_write_category_prefix_idempotent(
-    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+    client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """category 已带前缀不重复加；空 tag 被过滤（评审意见：防静默错误标签）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
@@ -359,7 +359,7 @@ async def test_write_category_prefix_idempotent(
 # ---- memory.update / append / delete ----
 
 
-async def test_update_body_and_verify(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_body_and_verify(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
@@ -370,7 +370,7 @@ async def test_update_body_and_verify(client: CnbApiClient, monkeypatch: pytest.
     assert patch.called
 
 
-async def test_update_labels_only(client: CnbApiClient) -> None:
+async def test_update_labels_only(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         labels = mock.post("/group/repo/-/issues/5/labels").respond(200, json=[])
@@ -380,7 +380,7 @@ async def test_update_labels_only(client: CnbApiClient) -> None:
     assert labels.called  # 不应触发 PATCH
 
 
-async def test_update_nothing_raises(client: CnbApiClient) -> None:
+async def test_update_nothing_raises(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         # 未提供任何变更时直接拒绝，零网络调用（评审意见：空变更前置）。
@@ -391,7 +391,7 @@ async def test_update_nothing_raises(client: CnbApiClient) -> None:
         assert mock.calls.call_count == 0  # 任何 HTTP 调用都算失败
 
 
-async def test_update_title_verified(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_title_verified(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """title 变更同样回读校验（评审意见：与 write 路径标准一致）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
@@ -404,7 +404,7 @@ async def test_update_title_verified(client: CnbApiClient, monkeypatch: pytest.M
     assert payload["title"] == "cam: 新标题"
 
 
-async def test_update_title_and_tags_same_call(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_title_and_tags_same_call(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """title/content 与 tags 同次调用都生效（评审意见：分支不再吞标签更新）。"""
     monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
@@ -417,7 +417,7 @@ async def test_update_title_and_tags_same_call(client: CnbApiClient, monkeypatch
     assert patch.called and labels.called
 
 
-async def test_append_and_verify(client: CnbApiClient) -> None:
+async def test_append_and_verify(client: CNBApiClient) -> None:
     memory = Memory(client)
     comment = {"id": "c9", "body": "备注"}
     with respx.mock(base_url=BASE) as mock:
@@ -432,7 +432,7 @@ async def test_append_and_verify(client: CnbApiClient) -> None:
     assert params["sort"] == "-created"
 
 
-async def test_append_verify_failure(client: CnbApiClient) -> None:
+async def test_append_verify_failure(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         mock.post("/group/repo/-/issues/5/comments").respond(201, json={"id": "c9", "body": "备注"})
@@ -441,7 +441,7 @@ async def test_append_verify_failure(client: CnbApiClient) -> None:
             await memory.append(5, "备注")
 
 
-async def test_delete_soft_and_verify(client: CnbApiClient) -> None:
+async def test_delete_soft_and_verify(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         patch = mock.patch("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "t", state="closed"))
@@ -452,7 +452,7 @@ async def test_delete_soft_and_verify(client: CnbApiClient) -> None:
     assert payload == {"state": "closed", "state_reason": "not_planned"}
 
 
-async def test_restore_reopen(client: CnbApiClient) -> None:
+async def test_restore_reopen(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         patch = mock.patch("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "t"))
@@ -465,7 +465,7 @@ async def test_restore_reopen(client: CnbApiClient) -> None:
 # ---- memory.list / search ----
 
 
-async def test_list_with_category_and_tags(client: CnbApiClient) -> None:
+async def test_list_with_category_and_tags(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/group/repo/-/issues").respond(200, json=[])
@@ -476,7 +476,7 @@ async def test_list_with_category_and_tags(client: CnbApiClient) -> None:
     assert params["page_size"] == "10"
 
 
-async def test_list_tags_prefix_idempotent(client: CnbApiClient) -> None:
+async def test_list_tags_prefix_idempotent(client: CNBApiClient) -> None:
     """已带命名空间前缀的 tags 不重复加前缀。"""
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
@@ -487,7 +487,7 @@ async def test_list_tags_prefix_idempotent(client: CnbApiClient) -> None:
     assert params["labels"] == "tag/already,tag/bare"
 
 
-async def test_list_recent(client: CnbApiClient) -> None:
+async def test_list_recent(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/group/repo/-/issues").respond(200, json=[])
@@ -498,7 +498,7 @@ async def test_list_recent(client: CnbApiClient) -> None:
     assert params["order_by"] == "-updated_at"
 
 
-async def test_search_parses_number_and_filters_closed(client: CnbApiClient) -> None:
+async def test_search_parses_number_and_filters_closed(client: CNBApiClient) -> None:
     memory = Memory(client)
     kb_items = [
         {
@@ -525,7 +525,7 @@ async def test_search_parses_number_and_filters_closed(client: CnbApiClient) -> 
     assert first.state == "open"
 
 
-async def test_search_include_closed(client: CnbApiClient) -> None:
+async def test_search_include_closed(client: CNBApiClient) -> None:
     memory = Memory(client)
     kb_items = [
         {
@@ -544,7 +544,7 @@ async def test_search_include_closed(client: CnbApiClient) -> None:
     assert closed_hit.state == "closed"
 
 
-async def test_search_kb_unavailable_suggests_fallback(client: CnbApiClient) -> None:
+async def test_search_kb_unavailable_suggests_fallback(client: CNBApiClient) -> None:
     """知识库 404 → MemoryError 提示降级通道。"""
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
@@ -557,7 +557,7 @@ async def test_search_kb_unavailable_suggests_fallback(client: CnbApiClient) -> 
     assert isinstance(exc_info.value.__cause__, ApiError)
 
 
-async def test_search_dedupes_repeated_numbers(client: CnbApiClient) -> None:
+async def test_search_dedupes_repeated_numbers(client: CNBApiClient) -> None:
     memory = Memory(client)
     kb_items = [
         {"score": 0.9, "chunk": "a", "metadata": {"path": "/group/repo/-/issues/11"}},

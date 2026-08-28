@@ -1,4 +1,4 @@
-"""CnbApiClient 单元测试：respx mock，覆盖 9 个端点与错误路径。"""
+"""CNBApiClient 单元测试：respx mock，覆盖 9 个端点与错误路径。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from cam import ApiError, CnbApiClient
+from cam import ApiError, CNBApiClient
 from cam.models import CreateCommentForm, CreateIssueForm, PatchIssueForm
 
 BASE = "https://api.cnb.cool"
@@ -20,7 +20,7 @@ ISSUE_DETAIL = {
 }
 
 
-async def test_create_issue_sends_form_and_parses(client: CnbApiClient) -> None:
+async def test_create_issue_sends_form_and_parses(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/group/repo/-/issues").respond(201, json=ISSUE_DETAIL)
         issue = await client.create_issue(CreateIssueForm(title="t", body="b"))
@@ -37,7 +37,7 @@ async def test_create_issue_sends_form_and_parses(client: CnbApiClient) -> None:
     assert issue.label_names == ["category/db"]
 
 
-async def test_add_labels(client: CnbApiClient) -> None:
+async def test_add_labels(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/group/repo/-/issues/7/labels").respond(200, json=[{"id": "2", "name": "tag/x"}])
         labels = await client.add_labels(7, ["tag/x"])
@@ -46,14 +46,14 @@ async def test_add_labels(client: CnbApiClient) -> None:
     assert [lb.name for lb in labels] == ["tag/x"]
 
 
-async def test_get_issue(client: CnbApiClient) -> None:
+async def test_get_issue(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/issues/7").respond(200, json=ISSUE_DETAIL)
         issue = await client.get_issue(7)
     assert issue.title == "cam: PostgreSQL 分区表"
 
 
-async def test_update_issue_excludes_none(client: CnbApiClient) -> None:
+async def test_update_issue_excludes_none(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         route = mock.patch("/group/repo/-/issues/7").respond(200, json=ISSUE_DETAIL)
         await client.update_issue(7, PatchIssueForm(body="新正文"))
@@ -64,7 +64,7 @@ async def test_update_issue_excludes_none(client: CnbApiClient) -> None:
     assert payload == {"body": "新正文"}
 
 
-async def test_list_issues_labels_joined(client: CnbApiClient) -> None:
+async def test_list_issues_labels_joined(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/group/repo/-/issues").respond(200, json=[ISSUE_DETAIL])
         issues = await client.list_issues(labels=["category/db", "tag/x"])
@@ -76,7 +76,7 @@ async def test_list_issues_labels_joined(client: CnbApiClient) -> None:
     assert params["state"] == "open"
 
 
-async def test_list_issues_without_labels_omits_params(client: CnbApiClient) -> None:
+async def test_list_issues_without_labels_omits_params(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/group/repo/-/issues").respond(200, json=[])
         await client.list_issues()
@@ -86,7 +86,7 @@ async def test_list_issues_without_labels_omits_params(client: CnbApiClient) -> 
     assert "keyword" not in params
 
 
-async def test_create_and_list_comments(client: CnbApiClient) -> None:
+async def test_create_and_list_comments(client: CNBApiClient) -> None:
     comment = {"id": "c1", "body": "备注"}
     with respx.mock(base_url=BASE) as mock:
         post = mock.post("/group/repo/-/issues/7/comments").respond(201, json=comment)
@@ -99,7 +99,7 @@ async def test_create_and_list_comments(client: CnbApiClient) -> None:
     assert post.called and list_route.called
 
 
-async def test_query_knowledge_base(client: CnbApiClient) -> None:
+async def test_query_knowledge_base(client: CNBApiClient) -> None:
     kb_item = {
         "score": 0.98,
         "chunk": "片段",
@@ -120,7 +120,7 @@ async def test_query_knowledge_base(client: CnbApiClient) -> None:
     assert chunks[0].url == "https://cnb.cool/group/repo/-/issues/7"
 
 
-async def test_get_knowledge_base(client: CnbApiClient) -> None:
+async def test_get_knowledge_base(client: CNBApiClient) -> None:
     kb = {"id": "kb1", "issue_sync_enabled": True, "statistics": {"count": 3}}
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/knowledge/base").respond(200, json=kb)
@@ -128,7 +128,7 @@ async def test_get_knowledge_base(client: CnbApiClient) -> None:
     assert status.issue_sync_enabled is True
 
 
-async def test_api_error_carries_body(client: CnbApiClient) -> None:
+async def test_api_error_carries_body(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/issues/404").respond(404, json={"errcode": 404, "errmsg": "issue 不存在"})
         with pytest.raises(ApiError) as exc_info:
@@ -144,9 +144,9 @@ def test_missing_config_raises_config_error() -> None:
     from cam import ConfigError
 
     with pytest.raises(ConfigError, match="CAM_TOKEN"):
-        CnbApiClient(token="", repo="g/r")
+        CNBApiClient(token="", repo="g/r")
     with pytest.raises(ConfigError, match="CAM_REPO"):
-        CnbApiClient(token="t", repo="")
+        CNBApiClient(token="t", repo="")
 
 
 async def test_env_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -154,7 +154,7 @@ async def test_env_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CAM_REPO", "env/repo")
     monkeypatch.setenv("CAM_BASE_URL", "https://api.example.com/")
     monkeypatch.setenv("CAM_TIMEOUT", "5")
-    client = CnbApiClient()
+    client = CNBApiClient()
     assert client.token == "env-token"
     assert client.repo == "env/repo"
     assert client.base_url == "https://api.example.com"
@@ -164,32 +164,32 @@ async def test_env_config(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_explicit_args_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CAM_TOKEN", "env-token")
     monkeypatch.setenv("CAM_REPO", "env/repo")
-    client = CnbApiClient(token="x", repo="y")
+    client = CNBApiClient(token="x", repo="y")
     assert client.token == "x" and client.repo == "y"
 
 
-def test_web_url(client: CnbApiClient) -> None:
+def test_web_url(client: CNBApiClient) -> None:
     assert client.web_url(7) == "https://cnb.cool/group/repo/-/issues/7"
 
 
 def test_invalid_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     """CAM_TIMEOUT 非法值回落默认，与 Config.from_env 行为一致（评审意见）。"""
     monkeypatch.setenv("CAM_TIMEOUT", "abc")
-    client = CnbApiClient(token="t", repo="g/r")
+    client = CNBApiClient(token="t", repo="g/r")
     assert client.timeout == 30.0
 
 
 def test_non_positive_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     """CAM_TIMEOUT=0/负值/inf 回落默认（0 在 httpx 语义=永不超时）。"""
     monkeypatch.setenv("CAM_TIMEOUT", "0")
-    assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
+    assert CNBApiClient(token="t", repo="g/r").timeout == 30.0
     monkeypatch.setenv("CAM_TIMEOUT", "-5")
-    assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
+    assert CNBApiClient(token="t", repo="g/r").timeout == 30.0
     monkeypatch.setenv("CAM_TIMEOUT", "inf")
-    assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
+    assert CNBApiClient(token="t", repo="g/r").timeout == 30.0
 
 
-async def test_non_json_2xx_raises_api_error(client: CnbApiClient) -> None:
+async def test_non_json_2xx_raises_api_error(client: CNBApiClient) -> None:
     """2xx 但响应非 JSON（网关异常页等）→ ApiError 保留原文（评审意见：不掩盖真实响应）。"""
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/issues/1").respond(200, text="<html>Bad Gateway Page</html>")
@@ -199,7 +199,7 @@ async def test_non_json_2xx_raises_api_error(client: CnbApiClient) -> None:
     assert "Bad Gateway Page" in exc_info.value.message
 
 
-async def test_timeout_enforced(client: CnbApiClient) -> None:
+async def test_timeout_enforced(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/issues/1").mock(side_effect=httpx.ReadTimeout("timeout"))
         with pytest.raises(httpx.TimeoutException):

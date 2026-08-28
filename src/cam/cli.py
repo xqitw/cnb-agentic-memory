@@ -15,12 +15,12 @@ from typing import Any
 import httpx
 import typer
 
-from .api import ApiError, CnbApiClient, ConfigError, env
+from .api import ApiError, CNBApiClient, ConfigError, env
 from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryError
 
 app = typer.Typer(
     name="cam",
-    help="Cnb Agentic Memory：基于 CNB 平台的通用智能体记忆工具",
+    help="CNB Agentic Memory：基于 CNB 平台的通用智能体记忆工具",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -33,7 +33,7 @@ def _execute(coro_factory: Any) -> Any:
     """
 
     async def runner() -> Any:
-        async with CnbApiClient() as client:
+        async with CNBApiClient() as client:
             memory = Memory(client)
             return await coro_factory(memory)
 

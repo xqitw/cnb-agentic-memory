@@ -60,12 +60,12 @@ class ApiError(Exception):
         super().__init__(f"CNB API {status_code}: {message}")
 
 
-class CnbApiClient:
+class CNBApiClient:
     """CNB Open API 异步客户端（9 个端点的薄封装）。
 
     用法::
 
-        async with CnbApiClient(token="...", repo="group/repo") as client:
+        async with CNBApiClient(token="...", repo="group/repo") as client:
             issue = await client.get_issue(1)
     """
 
@@ -102,7 +102,7 @@ class CnbApiClient:
             await self._client.aclose()
             self._client = None
 
-    async def __aenter__(self) -> CnbApiClient:
+    async def __aenter__(self) -> CNBApiClient:
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:

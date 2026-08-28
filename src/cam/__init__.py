@@ -4,7 +4,7 @@
 一记忆 = 一 Issue，number 是记忆唯一标识。
 """
 
-from .api import ApiError, CnbApiClient, ConfigError
+from .api import ApiError, CNBApiClient, ConfigError
 from .config import Config
 from .memory import Memory, MemoryError, SearchResult, WriteResult, normalize_title
 from .models import Comment, Issue, KbChunk, Label
@@ -14,7 +14,7 @@ __version__ = "1.0.0"
 __all__ = [
     "__version__",
     "ApiError",
-    "CnbApiClient",
+    "CNBApiClient",
     "ConfigError",
     "Comment",
     "Config",
