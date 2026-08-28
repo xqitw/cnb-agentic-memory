@@ -76,8 +76,8 @@ class CNBApiClient:
         base_url: str | None = None,
         timeout: float | None = None,
     ) -> None:
-        self.token = token or env("TOKEN") or ""
-        self.repo = repo or env("REPO") or ""
+        self.token = (token or env("TOKEN") or "").strip()
+        self.repo = (repo or env("REPO") or "").strip()
         self.base_url = (base_url or env("BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
         self.timeout = timeout if timeout is not None else parse_timeout(env("TIMEOUT"))
         self._validate_config()
