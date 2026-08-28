@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cnb-agentic-memory"
+version = "1.0.0"
+description = "Cnb Agentic Memory （简称CAM)  是基于 CNB 平台构建的通用记忆工具，把 CNB 的 issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "cnb-agentic-memory Contributors" }]
+keywords = [
+    "mcp",
+    "memory",
+    "agent",
+    "cnb",
+    "knowledge-base",
+    "llm",
+    "skill",
+    "cli",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = ["httpx>=0.27"]
+
+[project.optional-dependencies]
+# MCP server（upper bound 强制：mcp v2 移除 fastmcp 兼容路径）
+mcp = ["mcp>=1.2.0,<2"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "mcp>=1.2.0,<2",
+]
+
+[project.scripts]
+cam-mcp = "cam.mcp_server:main"
+cam = "cam.cli:main"
+
+[project.urls]
+Homepage = "https://cnb.cool/xqitw/cnb-agentic-memory"
+Repository = "https://cnb.cool/xqitw/cnb-agentic-memory"
+Issues = "https://cnb.cool/xqitw/cnb-agentic-memory/-/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cam"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src",
+    "tests",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["cam"]
+mypy_path = "src"
+ignore_missing_imports = true

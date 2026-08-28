@@ -1,0 +1,39 @@
+{
+    "//description": "项目 Markdown 文档 lint 配置。运行：markdownlint-cli2 '**/*.md'",
+    "//ignores": "忽略运行时数据、依赖、构建产物等非源码文档；CLAUDE.md 为 Claude Code 的 @AGENTS.md 单行导入文件（协议消费），首行非标题属预期",
+    "ignores": [
+        "node_modules/**",
+        ".venv/**",
+        ".pytest_cache/**",
+        ".ruff_cache/**",
+        ".mypy_cache/**",
+        "dist/**",
+        "CLAUDE.md"
+    ],
+    "config": {
+        "//MD013": "禁用行长度限制：中文文档按字符数限制 80 不现实，且代码块/表格常需长行",
+        "line-length": false,
+        "//MD024": "允许重复标题：不同章节下出现同名子标题（如'概述'）是合理的",
+        "no-duplicate-heading": {
+            "siblings_only": true
+        },
+        "//MD060": "表格分隔行必须用空格包裹管道符：| --- | 而非 |---|",
+        "table-column-style": {
+            "style": "compact"
+        },
+        "//MD007": "无序列表缩进 2 空格，与项目现有风格一致",
+        "ul-indent": {
+            "indent": 2
+        },
+        "//MD009": "行尾不允许多余空格",
+        "no-trailing-spaces": true,
+        "//MD012": "不允许连续多个空行",
+        "no-multiple-blanks": {
+            "maximum": 1
+        },
+        "//MD040": "代码块必须指定语言",
+        "fenced-code-language": true,
+        "//MD033": "禁止内联 HTML（保证纯 Markdown 可移植性）",
+        "no-inline-html": false
+    }
+}
