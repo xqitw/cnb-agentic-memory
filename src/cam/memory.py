@@ -46,11 +46,16 @@ VERIFY_INTERVAL_SECONDS = 0.5
 
 @dataclass(frozen=True)
 class WriteResult:
-    """memory_write 的返回：记忆编号与 Web 地址。"""
+    """memory_write 的返回：主分片定位 + 全部分片信息。
+
+    超长拆分时 parts 含全部分片（number/title/url），供调用方循迹；
+    单分片时 parts 为空元组（主字段即唯一分片）。
+    """
 
     number: int
     title: str
     url: str
+    parts: tuple[WriteResult, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -284,7 +289,12 @@ class Memory:
                     f"已落盘分片可按需软删除清理；原始错误：{reason}"
                 ) from err
             raise
-        return created[0]
+        # 多分片时 parts 携带全部分片供循迹；单分片时主字段即唯一分片
+        return (
+            created[0]
+            if len(created) == 1
+            else WriteResult(created[0].number, created[0].title, created[0].url, tuple(created))
+        )
 
     async def update(
         self,

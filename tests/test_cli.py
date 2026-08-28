@@ -114,6 +114,67 @@ def test_missing_repo_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 1
 
 
+def test_list_state_bogus_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--state 仅支持 open/closed（CNB API 不支持 all），非法值前置拒绝。"""
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    result = runner.invoke(app, ["list", "--state", "all"])
+
+    assert result.exit_code == 2
+    assert "仅支持 open/closed" in result.output
+
+
+def test_write_split_outputs_all_parts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """超长拆分时 CLI 输出全部分片编号（评审：循迹不漏片）。"""
+    import respx
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    counter = {"n": 0}
+    sizes: list[int] = []
+    titles: dict[int, str] = {}
+
+    def create_side_effect(request: httpx.Request) -> httpx.Response:
+        counter["n"] += 1
+        payload = json.loads(request.content)
+        sizes.append(len(payload["body"].encode("utf-8")))
+        titles[counter["n"]] = payload["title"]
+        return httpx.Response(201, json=issue_payload(counter["n"], payload["title"]))
+
+    def get_side_effect(request: httpx.Request) -> httpx.Response:
+        number = int(request.url.path.rsplit("/", 1)[1])
+        return httpx.Response(200, json=issue_payload(number, titles[number]))
+
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/g/r/-/issues").mock(side_effect=create_side_effect)
+        mock.post(path__regex=r"/g/r/-/issues/\d+/labels").respond(200, json=[])
+        mock.get(path__regex=r"/g/r/-/issues/\d+").mock(side_effect=get_side_effect)
+        result = runner.invoke(app, ["write", "段落。\n\n" + "x" * 40000, "--title", "t"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert len(data["parts"]) > 1  # 确实拆分了
+    assert data["parts"][0]["number"] == data["number"]  # 首片即主编号
+
+
+def test_list_limit_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--limit 超过 100 被 clamp 到 100（服务端分页上限）。"""
+    import respx
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get("/g/r/-/issues").respond(200, json=[])
+        result = runner.invoke(app, ["list", "--limit", "500"])
+
+    assert result.exit_code == 0
+    params = dict(route.calls.last.request.url.params)
+    assert params["page_size"] == "100"
+
+
 def test_search_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     import respx
 

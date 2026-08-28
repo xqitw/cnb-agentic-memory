@@ -15,7 +15,7 @@ from typing import Any
 import typer
 
 from .api import ApiError, CnbApiClient
-from .memory import Memory
+from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryError
 
 app = typer.Typer(
     name="cam",
@@ -41,9 +41,10 @@ def _execute(coro_factory: Any) -> Any:
     except ApiError as err:
         typer.echo(f"API 错误（{err.status_code}）：{err.message}", err=True)
         raise typer.Exit(1) from err
-    except Exception as err:  # 含 MemoryError
+    except MemoryError as err:
         typer.echo(f"错误：{err}", err=True)
         raise typer.Exit(1) from err
+    # 其余异常（代码缺陷等）不捕获，Python 默认打印 traceback 便于定位
 
 
 def _dump(data: Any) -> None:
@@ -82,7 +83,14 @@ def write(
         return memory.write(content, title=title, tags=tag, category=category)
 
     result = _execute(run)
-    _dump({"number": result.number, "title": result.title, "url": result.url})
+    _dump(
+        {
+            "number": result.number,
+            "title": result.title,
+            "url": result.url,
+            "parts": [{"number": p.number, "title": p.title, "url": p.url} for p in result.parts],
+        }
+    )
 
 
 @app.command()
@@ -153,14 +161,17 @@ def restore(number: int = typer.Argument(..., help="记忆编号")) -> None:
 def list_cmd(
     category: str = typer.Option(None, "--category", "-c", help="按分类过滤"),
     tag: list[str] = typer.Option(None, "--tag", help="按标签过滤，可多次传入"),
-    state: str = typer.Option("open", "--state", help="生命周期状态过滤：open/closed/all"),
-    limit: int = typer.Option(20, "--limit", "-l", help="返回条数上限"),
+    state: str = typer.Option("open", "--state", help="生命周期状态过滤：open/closed（CNB API 不支持 all）"),
+    limit: int = typer.Option(20, "--limit", "-l", help="返回条数上限（1~100）"),
 ) -> None:
     """按分类/标签过滤记忆列表。"""
+    if state not in (STATE_OPEN, STATE_CLOSED):
+        typer.echo("错误：--state 仅支持 open/closed", err=True)
+        raise typer.Exit(2)
+    limit = max(1, min(limit, 100))  # 服务端分页上限 100/页
 
     def run(memory: Memory) -> Any:
-        query_state = state if state != "all" else "open"
-        return memory.list(category=category, tags=tag, state=query_state, limit=limit)
+        return memory.list(category=category, tags=tag, state=state, limit=limit)
 
     issues = _execute(run)
     _dump([_issue_out(i) for i in issues])
@@ -168,9 +179,10 @@ def list_cmd(
 
 @app.command()
 def recent(
-    limit: int = typer.Option(5, "--limit", "-l", help="返回条数上限"),
+    limit: int = typer.Option(5, "--limit", "-l", help="返回条数上限（1~100）"),
 ) -> None:
     """最近更新的记忆。"""
+    limit = max(1, min(limit, 100))
 
     def run(memory: Memory) -> Any:
         return memory.list_recent(limit=limit)
@@ -182,10 +194,11 @@ def recent(
 @app.command()
 def search(
     query: str = typer.Argument(..., help="语义检索查询词"),
-    top_k: int = typer.Option(5, "--top-k", "-k", help="返回条数上限"),
+    top_k: int = typer.Option(5, "--top-k", "-k", help="返回条数上限（1~100）"),
     include_closed: bool = typer.Option(False, "--include-closed", help="包含已软删除的记忆"),
 ) -> None:
     """语义检索（知识库向量召回 → 回读补齐元信息）。"""
+    top_k = max(1, min(top_k, 100))
 
     def run(memory: Memory) -> Any:
         return memory.search(query, top_k=top_k, include_closed=include_closed)

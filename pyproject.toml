@@ -33,7 +33,8 @@ classifiers = [
 
 dependencies = [
     "httpx>=0.27",
-    "typer>=0.27.2",
+    # typer 0.x 有破坏性变更先例，上界对齐 mcp 的处理方式
+    "typer>=0.27.2,<1",
 ]
 
 [project.optional-dependencies]
