@@ -22,6 +22,7 @@ from .models import Comment, CreateCommentForm, CreateIssueForm, Issue, KbChunk,
 
 if TYPE_CHECKING:
     from builtins import list as _List  # noqa: UP035  # 避免与 Memory.list 方法名冲突
+
 # 软删除 / 生命周期状态约定
 STATE_OPEN = "open"
 STATE_CLOSED = "closed"
