@@ -139,10 +139,14 @@ async def test_api_error_carries_body(client: CnbApiClient) -> None:
     assert "404" in str(exc_info.value)
 
 
-async def test_missing_repo_raises_value_error() -> None:
-    async with CnbApiClient(token="t", repo="") as client:
-        with pytest.raises(ValueError, match="CAM_REPO"):
-            await client.get_issue(1)
+def test_missing_config_raises_config_error() -> None:
+    """配置缺失在构造时前置报错（含可操作提示），而非请求时才失败。"""
+    from cam import ConfigError
+
+    with pytest.raises(ConfigError, match="CAM_TOKEN"):
+        CnbApiClient(token="", repo="g/r")
+    with pytest.raises(ConfigError, match="CAM_REPO"):
+        CnbApiClient(token="t", repo="")
 
 
 async def test_env_config(monkeypatch: pytest.MonkeyPatch) -> None:

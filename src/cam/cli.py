@@ -12,9 +12,10 @@ import asyncio
 import json
 from typing import Any
 
+import httpx
 import typer
 
-from .api import ApiError, CnbApiClient
+from .api import ApiError, CnbApiClient, ConfigError, env
 from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryError
 
 app = typer.Typer(
@@ -38,13 +39,27 @@ def _execute(coro_factory: Any) -> Any:
 
     try:
         return asyncio.run(runner())
+    except ConfigError as err:
+        typer.echo(f"配置错误：{err}", err=True)
+        typer.echo("请设置环境变量后重试（配置说明见 docs/CLI.md）", err=True)
+        raise typer.Exit(2) from err
     except ApiError as err:
         typer.echo(f"API 错误（{err.status_code}）：{err.message}", err=True)
         raise typer.Exit(1) from err
     except MemoryError as err:
         typer.echo(f"错误：{err}", err=True)
         raise typer.Exit(1) from err
-    # 其余异常（代码缺陷等）不捕获，Python 默认打印 traceback 便于定位
+    except httpx.HTTPError as err:
+        typer.echo(f"网络错误：{type(err).__name__}: {err}", err=True)
+        typer.echo("请检查网络连接后重试", err=True)
+        raise typer.Exit(1) from err
+    except Exception as err:
+        # 未预期异常：默认友好一行；CAM_DEBUG=1 时抛出完整 traceback 定位代码缺陷
+        typer.echo(f"内部错误：{type(err).__name__}: {err}", err=True)
+        if env("DEBUG"):
+            raise
+        typer.echo("如需查看完整堆栈，请设置 CAM_DEBUG=1 后重试", err=True)
+        raise typer.Exit(70) from err
 
 
 def _dump(data: Any) -> None:

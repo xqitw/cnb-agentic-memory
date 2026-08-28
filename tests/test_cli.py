@@ -107,11 +107,14 @@ def test_api_error_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_missing_repo_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+    """配置缺失：退出码 2 + 可操作的友好提示（评审反馈：令牌缺失须有提示）。"""
     monkeypatch.delenv("CAM_REPO", raising=False)
     monkeypatch.delenv("CAM_TOKEN", raising=False)
     result = runner.invoke(app, ["get", "1"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
+    assert "CAM_TOKEN" in result.output
+    assert "CAM_REPO" in result.output
 
 
 def test_list_state_bogus_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -43,6 +43,10 @@ def parse_timeout(value: str | None) -> float:
     return timeout if 0 < timeout < float("inf") else DEFAULT_TIMEOUT
 
 
+class ConfigError(Exception):
+    """配置缺失/非法（token/repo 等），SDK 与 CLI 据此给出可操作的友好提示。"""
+
+
 class ApiError(Exception):
     """CNB API 错误（响应体原样保留，由调用方决定后续处理）。
 
@@ -76,6 +80,7 @@ class CnbApiClient:
         self.repo = repo or env("REPO") or ""
         self.base_url = (base_url or env("BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
         self.timeout = timeout if timeout is not None else parse_timeout(env("TIMEOUT"))
+        self._validate_config()
         self._client: httpx.AsyncClient | None = None
 
     # ---- 生命周期 ----
@@ -105,10 +110,18 @@ class CnbApiClient:
 
     # ---- 内部 ----
 
+    def _validate_config(self) -> None:
+        """构造时前置校验配置完整性，给出可操作的提示（而非请求时才炸）。"""
+        missing = []
+        if not self.token:
+            missing.append("CAM_TOKEN（CNB API 令牌）")
+        if not self.repo:
+            missing.append("CAM_REPO（记忆仓库 slug，如 group/memory）")
+        if missing:
+            raise ConfigError("缺少必需配置：" + "、".join(missing))
+
     def _path(self, suffix: str) -> str:
         """拼接 API 路径：/{repo}/-/{suffix}。"""
-        if not self.repo:
-            raise ValueError("缺少仓库配置：请显式传入 repo 或设置 CAM_REPO 环境变量")
         return f"/{self.repo}/-/{suffix.lstrip('/')}"
 
     async def _request(
