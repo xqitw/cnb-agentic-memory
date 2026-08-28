@@ -279,7 +279,7 @@ async def test_search_network_error_suggests_fallback(client: CNBApiClient) -> N
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/knowledge/base/query").mock(side_effect=httpx_mod.ConnectError("net down"))
-        with pytest.raises(MemoryError, match="降级") as exc_info:
+        with pytest.raises(MemoryError, match="keyword_search") as exc_info:
             await memory.search("查询")
 
     assert "ConnectError" in str(exc_info.value)  # 携带原始错误类型
@@ -551,7 +551,7 @@ async def test_search_kb_unavailable_suggests_fallback(client: CNBApiClient) -> 
         mock.get("/group/repo/-/knowledge/base/query").respond(
             404, json={"errcode": 404, "errmsg": "知识库未启用"}
         )
-        with pytest.raises(MemoryError, match="降级") as exc_info:
+        with pytest.raises(MemoryError, match="keyword_search") as exc_info:
             await memory.search("查询")
 
     assert isinstance(exc_info.value.__cause__, ApiError)

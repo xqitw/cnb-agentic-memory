@@ -28,8 +28,8 @@ def _tool_names() -> list[str]:
     return [t.name for t in mcp._tool_manager.list_tools()]
 
 
-def test_nine_tools_registered() -> None:
-    """9 个记忆操作全部注册为 MCP 工具。"""
+def test_ten_tools_registered() -> None:
+    """10 个记忆操作全部注册为 MCP 工具（含关键词标题检索）。"""
     assert set(_tool_names()) == {
         "memory_write",
         "memory_get",
@@ -40,6 +40,7 @@ def test_nine_tools_registered() -> None:
         "memory_list",
         "memory_list_recent",
         "memory_search",
+        "memory_keyword_search",
     }
 
 

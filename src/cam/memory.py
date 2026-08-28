@@ -390,6 +390,26 @@ class Memory:
         """最近更新的记忆（一次请求）。"""
         return await self.client.list_issues(state=STATE_OPEN, order_by="-updated_at", page_size=limit)
 
+    async def keyword_search(self, query: str, *, limit: int = 20) -> _List[Issue]:
+        """关键词标题检索（与语义检索并列的第二检索方法，按需选择）。
+
+        - 仅匹配标题（CNB keyword 检索特性），无法检索正文——title 是
+          关键词摘要正因此关键
+        - state 不支持 all，分 open/closed 各查一次后合并（按 number 去重）
+        - 适用场景：记忆 title 中含有确切关键词（如技术名词、编号）时，
+          比语义检索更精准直接
+        """
+        if not query.strip():
+            raise MemoryError("检索词不能为空")
+        seen: dict[int, Issue] = {}
+        for state in (STATE_OPEN, STATE_CLOSED):
+            issues = await self.client.list_issues(
+                state=state, keyword=query, order_by="-updated_at", page_size=max(limit, 1)
+            )
+            for issue in issues:
+                seen.setdefault(issue.number, issue)
+        return sorted(seen.values(), key=lambda i: i.number, reverse=True)[:limit]
+
     async def search(
         self,
         query: str,
@@ -397,10 +417,10 @@ class Memory:
         top_k: int = 5,
         include_closed: bool = False,
     ) -> _List[SearchResult]:
-        """语义检索（主通道：知识库向量召回 → 解析 number → 回读原文补齐元信息）。
+        """语义检索（知识库向量召回 → 解析 number → 回读原文补齐元信息）。
 
-        - 知识库不可用（404/网络异常）时抛出 MemoryError，由调用方决定是否
-          降级为 client.list_issues(keyword=...) 标题检索（降级通道）
+        - 知识库不可用（404/网络异常）时抛出 MemoryError，错误信息提示
+          可改用 keyword_search（关键词标题检索，与语义检索并列的第二方法）
         - include_closed=False 时过滤掉已软删除的记忆
         - 单个命中回读失败（如已删除/网络异常）跳过该条，不中断整体检索
         """
@@ -410,7 +430,7 @@ class Memory:
             reason = f"{type(err).__name__}: {err}"
             raise MemoryError(
                 f"知识库检索失败（{reason}）。"
-                f"可降级为标题检索：client.list_issues(keyword=...)，"
+                f"可改用 keyword_search 按标题关键词检索，"
                 f"注意知识库需先配置 .cnb.yml 流水线才会建立"
             ) from err
 
