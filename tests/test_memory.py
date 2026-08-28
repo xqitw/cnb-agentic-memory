@@ -286,6 +286,16 @@ async def test_search_network_error_suggests_fallback(client: CnbApiClient) -> N
     assert "ConnectError" in str(exc_info.value)  # 携带原始错误类型
 
 
+def test_title_suffix_fits_limit_for_large_split_count() -> None:
+    """分片数 >= 1000 时 (i/n) 后缀仍不破 60 字符上限（评审建议的回归守卫）。"""
+    from cam.memory import MAX_TITLE_CHARS, normalize_title
+
+    for n in (999, 1000, 12345):
+        base = normalize_title("超" * 200, "正文")
+        width = len(f" ({n}/{n})")
+        assert len(base[: MAX_TITLE_CHARS - width] + f" ({n}/{n})") <= MAX_TITLE_CHARS
+
+
 async def test_write_single_label_failure_reports_number(
     client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
