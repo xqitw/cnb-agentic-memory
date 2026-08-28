@@ -1,0 +1,132 @@
+"""MCP Server 单元测试：工具注册、title 指导内嵌、JSON 输出形状、错误处理。"""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+import respx
+
+from cam.mcp_server import mcp
+
+BASE = "https://api.cnb.cool"
+
+
+def issue_payload(number: int, title: str, body: str = "", state: str = "open") -> dict:
+    return {
+        "number": str(number),
+        "title": title,
+        "body": body,
+        "state": state,
+        "labels": [],
+        "comment_count": 0,
+    }
+
+
+def _tool_names() -> list[str]:
+    return [t.name for t in mcp._tool_manager.list_tools()]
+
+
+def test_nine_tools_registered() -> None:
+    """9 个记忆操作全部注册为 MCP 工具。"""
+    assert set(_tool_names()) == {
+        "memory_write",
+        "memory_get",
+        "memory_update",
+        "memory_append",
+        "memory_delete",
+        "memory_restore",
+        "memory_list",
+        "memory_list_recent",
+        "memory_search",
+    }
+
+
+def test_tool_descriptions_embed_title_guidance() -> None:
+    """title 撰写指导必须内嵌在 memory_write 工具描述（评审要求）。"""
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_write")
+    assert "关键词" in tool.description
+    assert "keyword" in tool.description.lower()
+
+
+def test_tool_descriptions_note_append_semantics() -> None:
+    """memory_update 描述须区分全量替换与追加语义（防误用）。"""
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_update")
+    assert "全量替换" in tool.description
+    assert "memory_append" in tool.description
+
+
+def test_memory_write_returns_parts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_write 工具返回 JSON，超长拆分时含全部分片（评审：循迹不漏片）。"""
+    import asyncio
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_write")
+    counter = {"n": 0}
+    titles: dict[int, str] = {}
+
+    def create_side_effect(request: httpx.Request) -> httpx.Response:
+        counter["n"] += 1
+        payload = json.loads(request.content)
+        titles[counter["n"]] = payload["title"]
+        return httpx.Response(201, json=issue_payload(counter["n"], payload["title"]))
+
+    def get_side_effect(request: httpx.Request) -> httpx.Response:
+        number = int(request.url.path.rsplit("/", 1)[1])
+        return httpx.Response(200, json=issue_payload(number, titles[number]))
+
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/g/r/-/issues").mock(side_effect=create_side_effect)
+        mock.post(path__regex=r"/g/r/-/issues/\d+/labels").respond(200, json=[])
+        mock.get(path__regex=r"/g/r/-/issues/\d+").mock(side_effect=get_side_effect)
+        result = asyncio.run(tool.fn(content="段落。\n\n" + "x" * 40000, title="t"))
+
+    data = json.loads(result)
+    assert data["number"] == 1
+    assert len(data["parts"]) > 1  # 已拆分且全部分片可循迹
+
+
+def test_memory_get_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_get 返回记忆 JSON。"""
+    import asyncio
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues/7").respond(
+            200,
+            json={
+                "number": "7",
+                "title": "cam: t",
+                "body": "正文",
+                "state": "open",
+                "labels": [{"name": "tag/x"}],
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+        result = asyncio.run(tool.fn(number=7))
+
+    data = json.loads(result)
+    assert data["number"] == 7
+    assert data["labels"] == ["tag/x"]
+
+
+def test_memory_get_api_error_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """API 错误在工具函数内抛出（由 MCP 框架转为 isError 结果），不吞不包装。"""
+    import asyncio
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues/404").respond(404, json={"errcode": 404, "errmsg": "不存在"})
+        with pytest.raises(Exception, match="404"):
+            asyncio.run(tool.fn(number=404))
