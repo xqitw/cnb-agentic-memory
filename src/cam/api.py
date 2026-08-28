@@ -34,6 +34,14 @@ def env(name: str, default: str | None = None) -> str | None:
     return os.environ.get(f"CAM_{name}", default)
 
 
+def parse_timeout(value: str | None) -> float:
+    """解析超时秒数，非法值回落默认（客户端与 Config 行为一致）。"""
+    try:
+        return float(value) if value else DEFAULT_TIMEOUT
+    except ValueError:
+        return DEFAULT_TIMEOUT
+
+
 class ApiError(Exception):
     """CNB API 错误（响应体原样保留，由调用方决定后续处理）。
 
@@ -66,8 +74,7 @@ class CnbApiClient:
         self.token = token or env("TOKEN") or ""
         self.repo = repo or env("REPO") or ""
         self.base_url = (base_url or env("BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
-        timeout_env = env("TIMEOUT")
-        self.timeout = timeout if timeout is not None else float(timeout_env or DEFAULT_TIMEOUT)
+        self.timeout = timeout if timeout is not None else parse_timeout(env("TIMEOUT"))
         self._client: httpx.AsyncClient | None = None
 
     # ---- 生命周期 ----
@@ -115,7 +122,11 @@ class CnbApiClient:
         resp = await self.client.request(method, path, params=params, json=json_body)
         if resp.status_code >= 400:
             raise ApiError(resp.status_code, resp.text)
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as err:
+            # 2xx 但响应非 JSON（网关异常页等）：保留原文抛错，不掩盖真实响应
+            raise ApiError(resp.status_code, f"响应非 JSON：{resp.text[:500]}") from err
 
     def web_url(self, number: int) -> str:
         """记忆 Issue 的 Web 页面地址。"""

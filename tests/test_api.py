@@ -168,6 +168,23 @@ def test_web_url(client: CnbApiClient) -> None:
     assert client.web_url(7) == "https://cnb.cool/group/repo/-/issues/7"
 
 
+def test_invalid_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CAM_TIMEOUT 非法值回落默认，与 Config.from_env 行为一致（评审意见）。"""
+    monkeypatch.setenv("CAM_TIMEOUT", "abc")
+    client = CnbApiClient(token="t", repo="g/r")
+    assert client.timeout == 30.0
+
+
+async def test_non_json_2xx_raises_api_error(client: CnbApiClient) -> None:
+    """2xx 但响应非 JSON（网关异常页等）→ ApiError 保留原文（评审意见：不掩盖真实响应）。"""
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/group/repo/-/issues/1").respond(200, text="<html>Bad Gateway Page</html>")
+        with pytest.raises(ApiError) as exc_info:
+            await client.get_issue(1)
+
+    assert "Bad Gateway Page" in exc_info.value.message
+
+
 async def test_timeout_enforced(client: CnbApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/issues/1").mock(side_effect=httpx.ReadTimeout("timeout"))

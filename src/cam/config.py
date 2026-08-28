@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .api import DEFAULT_BASE_URL, DEFAULT_TIMEOUT, env
+from .api import DEFAULT_BASE_URL, DEFAULT_TIMEOUT, env, parse_timeout
 
 
 @dataclass(frozen=True)
@@ -26,14 +26,9 @@ class Config:
     @classmethod
     def from_env(cls) -> Config:
         """从 CAM_ 前缀环境变量构建配置。"""
-        timeout_raw = env("TIMEOUT")
-        try:
-            timeout = float(timeout_raw) if timeout_raw else DEFAULT_TIMEOUT
-        except ValueError:
-            timeout = DEFAULT_TIMEOUT
         return cls(
             token=env("TOKEN") or "",
             repo=env("REPO") or "",
             base_url=(env("BASE_URL") or DEFAULT_BASE_URL).rstrip("/"),
-            timeout=timeout,
+            timeout=parse_timeout(env("TIMEOUT")),
         )

@@ -153,6 +153,83 @@ async def test_write_splits_long_content(client: CnbApiClient, monkeypatch: pyte
     assert counter["n"] > 1  # 被拆成多条
     assert result.title.endswith(f"(1/{counter['n']})")
     assert all(title.startswith("cam: ") for title in created.values())
+    assert all(len(t) <= 60 for t in created.values())  # title 含序号后缀仍不超上限
+
+
+async def test_write_splits_single_long_line(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """无空行的超长单行（代码块/长文本）也能被按行拆分（评审意见：保底按行）。"""
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    long_content = "line\n" * 12000  # 无空行、约 60KB
+    counter = {"n": 0}
+    sizes: list[int] = []
+    titles: dict[int, str] = {}
+
+    def create_side_effect(request: httpx.Request) -> httpx.Response:
+        counter["n"] += 1
+        payload = json.loads(request.content)
+        sizes.append(len(payload["body"].encode("utf-8")))
+        titles[counter["n"]] = payload["title"]
+        return httpx.Response(201, json=issue_payload(counter["n"], payload["title"]))
+
+    def get_side_effect(request: httpx.Request) -> httpx.Response:
+        number = int(request.url.path.rsplit("/", 1)[1])
+        return httpx.Response(200, json=issue_payload(number, titles[number]))
+
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/group/repo/-/issues").mock(side_effect=create_side_effect)
+        mock.post(path__regex=r"/group/repo/-/issues/\d+/labels").respond(200, json=[])
+        mock.get(path__regex=r"/group/repo/-/issues/\d+").mock(side_effect=get_side_effect)
+        await memory.write(long_content)
+
+    assert counter["n"] > 1
+    assert all(size <= 30000 for size in sizes)  # 每个分片都不超上限
+
+
+async def test_write_partial_failure_reports_created(
+    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """多分片写入中途失败：MemoryError 携带已创建分片编号（评审意见：孤儿 Issue 可循迹）。"""
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    long_content = ("段落。\n\n" + "x" * 20000) * 3
+    counter = {"n": 0}
+
+    def create_side_effect(request: httpx.Request) -> httpx.Response:
+        counter["n"] += 1
+        if counter["n"] == 2:
+            return httpx.Response(500, json={"errcode": 500, "errmsg": "boom"})
+        payload = json.loads(request.content)
+        return httpx.Response(201, json=issue_payload(counter["n"], payload["title"]))
+
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/group/repo/-/issues").mock(side_effect=create_side_effect)
+        with pytest.raises(MemoryError, match="已完成 1/") as exc_info:
+            await memory.write(long_content, verify=False)
+
+    assert "#1" in str(exc_info.value)  # 已创建分片可循迹
+
+
+async def test_write_category_prefix_idempotent(
+    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """category 已带前缀不重复加；空 tag 被过滤（评审意见：防静默错误标签）。"""
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    captured: dict[str, object] = {}
+
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/group/repo/-/issues").mock(side_effect=echo_issue(30))
+
+        def label_side_effect(request: httpx.Request) -> httpx.Response:
+            captured["labels"] = json.loads(request.content)["labels"]
+            return httpx.Response(200, json=[])
+
+        mock.post("/group/repo/-/issues/30/labels").mock(side_effect=label_side_effect)
+        mock.get("/group/repo/-/issues/30").respond(200, json=issue_payload(30, "cam: t"))
+        await memory.write("内容", title="t", tags=["", "  ", "tag/ok", "x"], category="category/db")
+
+    assert captured["labels"] == ["category/db", "tag/ok", "tag/x"]
 
 
 # ---- memory.update / append / delete ----
@@ -185,16 +262,45 @@ async def test_update_nothing_raises(client: CnbApiClient) -> None:
         await memory.update(5)
 
 
+async def test_update_title_verified(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """title 变更同样回读校验（评审意见：与 write 路径标准一致）。"""
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    with respx.mock(base_url=BASE) as mock:
+        patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
+        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "cam: 新标题"))
+        await memory.update(5, title="新标题")
+
+    payload = json.loads(patch.calls.last.request.content)
+    assert payload["title"] == "cam: 新标题"
+
+
+async def test_update_title_and_tags_same_call(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """title/content 与 tags 同次调用都生效（评审意见：分支不再吞标签更新）。"""
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
+        labels = mock.post("/group/repo/-/issues/5/labels").respond(200, json=[])
+        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "cam: 新标题"))
+        await memory.update(5, title="新标题", tags=["x"])
+
+    assert patch.called and labels.called
+
+
 async def test_append_and_verify(client: CnbApiClient) -> None:
     memory = Memory(client)
     comment = {"id": "c9", "body": "备注"}
     with respx.mock(base_url=BASE) as mock:
         post = mock.post("/group/repo/-/issues/5/comments").respond(201, json=comment)
-        mock.get("/group/repo/-/issues/5/comments").respond(200, json=[comment])
+        list_route = mock.get("/group/repo/-/issues/5/comments").respond(200, json=[comment])
         got = await memory.append(5, "备注")
 
     assert post.called
     assert got.id == "c9"
+    # 回读按创建倒序取最新一页，评论超 100 条时新评论必在首页
+    params = dict(list_route.calls.last.request.url.params)
+    assert params["sort"] == "-created"
 
 
 async def test_append_verify_failure(client: CnbApiClient) -> None:
