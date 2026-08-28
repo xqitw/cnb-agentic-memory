@@ -1,0 +1,154 @@
+# SDK API 参考
+
+`cnb-agentic-memory` 的 SDK 层是所有形态（CLI / MCP / Skill）的基座：架构红线（两步写入、写后回读校验、title 不变量、软删除）全部沉淀在此层，上层只是薄封装。
+
+```python
+from cam import CnbApiClient, Memory
+
+async with CnbApiClient(token="...", repo="group/memory") as client:
+    memory = Memory(client)
+    result = await memory.write(
+        "PostgreSQL 分区表使用 pg_partman 解决慢查询",
+        title="PostgreSQL 分区表 pg_partman",
+    )
+    print(result.number, result.url)
+```
+
+## 配置
+
+配置优先级：**显式参数 > `CAM_` 前缀环境变量 > 默认值**。环境变量由 `cam.config.Config.from_env()` 统一读取，SDK / CLI / MCP 各形态行为一致。
+
+| 环境变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `CAM_TOKEN` | CNB API Token，需 `repo-issue:rw`（Issue 读写）+ `repo-code:r`（知识库检索） | 无（必填） |
+| `CAM_REPO` | 记忆仓库 slug，如 `group/memory` | 无（必填） |
+| `CAM_BASE_URL` | CNB Open API 地址 | `https://api.cnb.cool` |
+| `CAM_TIMEOUT` | 请求超时秒数 | `30` |
+
+```python
+# 三种等价写法
+CnbApiClient(token="t", repo="g/r")  # 显式参数
+CnbApiClient()  # 全走 CAM_ 环境变量
+CnbApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
+```
+
+## 错误处理
+
+SDK 不做重试/限流——调用方（智能体）收到错误后自行决策。错误路径：`CNB 响应 → ApiError(原文) → MCP/CLI 透传`，SDK 全程不吞错、不包装语义。
+
+| 异常 | 含义 | 常见场景 |
+| --- | --- | --- |
+| `cam.ApiError` | CNB API 非 2xx，`status_code` + `message`（响应体原文） | 404 记忆不存在、401 token 无效 |
+| `cam.MemoryError` | 记忆业务规则失败（在 ApiError 之上） | 内容为空、写后回读校验不一致、知识库检索失败 |
+
+```python
+from cam import ApiError, MemoryError
+
+try:
+    await memory.write(content)
+except MemoryError as err:
+    ...  # 业务规则失败，含回读校验失败
+except ApiError as err:
+    ...  # err.status_code / err.message 为 CNB 响应原文
+```
+
+## cam.api — CNB API 薄封装
+
+`CnbApiClient` 封装 9 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| `create_issue(form)` | `POST /{-}/issues` | 创建 Issue；标签必须走 `add_labels` 两步写入 |
+| `add_labels(number, labels)` | `POST /{-}/issues/{n}/labels` | 补打标签，可自动创建不存在的标签 |
+| `get_issue(number)` | `GET /{-}/issues/{n}` | 读取 Issue |
+| `update_issue(number, form)` | `PATCH /{-}/issues/{n}` | 更新 Issue，`None` 字段不发送 |
+| `list_issues(...)` | `GET /{-}/issues` | 列表；`keyword` 只匹配标题，分页上限 100/页 |
+| `create_comment(number, form)` | `POST /{-}/issues/{n}/comments` | 追加评论 |
+| `list_comments(number)` | `GET /{-}/issues/{n}/comments` | 评论列表 |
+| `query_knowledge_base(query, top_k)` | `GET /{-}/knowledge/base/query` | 语义检索（主检索通道） |
+| `get_knowledge_base()` | `GET /{-}/knowledge/base` | 知识库状态（降级判定） |
+
+`web_url(number)` 返回记忆的 Web 页面地址。
+
+> 实测约束：所有请求自动携带 `Accept: application/json`，缺失时 CNB 返回 406。
+
+## cam.memory — 记忆语义层
+
+`Memory(client)` 在 API 层之上实现记忆业务规则。一记忆 = 一 Issue，`number` 即记忆唯一标识。
+
+| 方法 | 说明 |
+| --- | --- |
+| `write(content, *, title, tags, category, verify)` | 写入记忆：创建 Issue → 补打标签（两步写入）→ 回读校验。返回 `WriteResult(number, title, url)` |
+| `update(number, *, content, title, tags, category, verify)` | 更新正文/标题/标签，回读校验。`content` 为全量替换 |
+| `append(number, note, *, verify)` | 追加更新记录（评论），进知识库可被语义检索 |
+| `delete(number, *, verify)` | 软删除（`state=closed` + `not_planned`），可恢复 |
+| `restore(number)` | 恢复软删除的记忆（reopen） |
+| `get(number)` | 精确读取记忆原文 |
+| `list(*, category, tags, state, limit)` | 按分类/标签过滤列表（结构化过滤，与语义检索解耦） |
+| `list_recent(limit=5)` | 最近更新的记忆 |
+| `search(query, *, top_k, include_closed)` | 语义检索：知识库召回 → 解析 `number` → 回读补齐元信息。知识库不可用时抛 `MemoryError` 并提示降级方式 |
+
+设计约定：
+
+- **title 撰写权在调用方**：keyword 检索只匹配标题，title 由智能体撰写（提炼高区分度关键词短语）；未提供时兜底为正文首行截取。工具只保证不变量：`cam:` 前缀 + ≤60 字符。MCP 与 Skill 层需在工具描述中给智能体明确的 title 撰写指导
+- **两步写入**：创建时不传 labels（服务端对新标签静默丢弃），创建后单独补打
+- **写后回读校验**：写操作 GET 回读确认，短重试（3 次 × 0.5s）后仍不一致才报错；`verify=False` 可跳过（仅测试）
+- **超长拆分**：正文超过 30KB 自动按段落拆为多条，title 带 `(i/n)` 序号关联
+- **软删除**：无硬删除接口（CNB DELETE 返回 404），`delete` 后可 `restore`
+- **标签命名空间**：`tags` 自动补 `tag/` 前缀、`category` 补 `category/` 前缀（已带前缀则原样保留，幂等）
+- **检索分层**：主通道知识库向量召回（实测 0.98+），降级通道 `client.list_issues(keyword=...)` 标题检索
+
+## cam.models — 数据模型
+
+字段以「是否参与记忆的生命周期或检索语义」为准入，CNB 展示层字段（优先级/颜色/作者/计数等）不收。`extra="ignore"` 宽容上游新增字段。
+
+| 模型 | 字段 |
+| --- | --- |
+| `Issue` | `number`（唯一标识）/ `title` / `body` / `state` / `labels` / `created_at` / `updated_at` |
+| `Comment` | `id` / `body` / `created_at` |
+| `WriteResult` | `number` / `title` / `url` |
+| `SearchResult` | `score` / `chunk` / `number` / `title` / `state` / `url` |
+| `KbChunk` | `score` / `chunk` / `metadata`；`number` 属性从 `metadata.path` 解析 |
+| `KnowledgeBase` | `id` / `issue_sync_enabled`（降级判定） |
+
+各字段语义见模型内 `Field(description=...)`——它是 P2 CLI 帮助文本与 P3 MCP 参数 Schema 的单一来源。
+
+## 记忆仓库前置条件
+
+知识库检索依赖仓库已配置 Issue 事件同步流水线。`.cnb.yml` 事件必须挂在 `$` 键下（顶层写法静默无效），且**先配置流水线再写入记忆**——错过事件的 Issue 不会被补录：
+
+```yaml
+$:
+  issue.open:
+    - stages:
+        - name: sync kb on issue open
+          type: knowledge:update
+          options:
+            issueSyncEnabled: true
+  issue.update:
+    - stages:
+        - name: sync kb on issue update
+          type: knowledge:update
+          options:
+            issueSyncEnabled: true
+  issue.comment:
+    - stages:
+        - name: sync kb on issue comment
+          type: knowledge:update
+          options:
+            issueSyncEnabled: true
+  issue.reopen:
+    - stages:
+        - name: sync kb on issue reopen
+          type: knowledge:update
+          options:
+            issueSyncEnabled: true
+  issue.close:
+    - stages:
+        - name: sync kb on issue close
+          type: knowledge:update
+          options:
+            issueSyncEnabled: true
+```
+
+写入到可检索有 1~2 分钟同步时延，属平台预期行为。
