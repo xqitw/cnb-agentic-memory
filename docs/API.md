@@ -27,9 +27,9 @@ async with CnbApiClient(token="...", repo="group/memory") as client:
 
 ```python
 # 三种等价写法
-CnbApiClient(token="t", repo="g/r")            # 显式参数
-CnbApiClient()                                   # 全走 CAM_ 环境变量
-CnbApiClient(token="t", timeout=10)              # 混合：参数覆盖对应环境变量
+CnbApiClient(token="t", repo="g/r")  # 显式参数
+CnbApiClient()  # 全走 CAM_ 环境变量
+CnbApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
 ```
 
 ## 错误处理
