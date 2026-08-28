@@ -45,10 +45,7 @@ dev = [
     "mcp>=1.2.0,<2",
 ]
 
-[project.scripts]
-cam-mcp = "cam.mcp_server:main"
-cam = "cam.cli:main"
-
+# CLI / MCP 入口随 P2（cam.cli）与 P3（cam.mcp_server）实现时添加
 [project.urls]
 Homepage = "https://cnb.cool/xqitw/cnb-agentic-memory"
 Repository = "https://cnb.cool/xqitw/cnb-agentic-memory"
