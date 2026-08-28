@@ -19,6 +19,29 @@ pip install "cnb-agentic-memory[mcp]"
 
 ## 客户端接入
 
+**推荐：uvx 方式运行**（无需预装，uv 自动拉取包并执行）：
+
+```json
+{
+  "mcpServers": {
+    "cam": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "cnb-agentic-memory[mcp]",
+        "cam-mcp"
+      ],
+      "env": {
+        "CAM_TOKEN": "<token>",
+        "CAM_REPO": "group/memory"
+      }
+    }
+  }
+}
+```
+
+已安装包的环境也可直接用入口命令：
+
 ```json
 {
   "mcpServers": {

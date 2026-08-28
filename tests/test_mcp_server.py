@@ -130,3 +130,50 @@ def test_memory_get_api_error_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         mock.get("/g/r/-/issues/404").respond(404, json={"errcode": 404, "errmsg": "不存在"})
         with pytest.raises(Exception, match="404"):
             asyncio.run(tool.fn(number=404))
+
+
+def test_memory_write_partial_success_transparent(monkeypatch):
+    """拆分部分成功：MemoryError 的循迹信息透传给智能体（评审 warning）。"""
+    import asyncio
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_write")
+    counter = {"n": 0}
+    titles = {}
+
+    def create_side_effect(request):
+        counter["n"] += 1
+        if counter["n"] == 2:
+            return httpx.Response(500, json={"errcode": 500, "errmsg": "boom"})
+        payload = json.loads(request.content)
+        titles[counter["n"]] = payload["title"]
+        return httpx.Response(201, json=issue_payload(counter["n"], payload["title"]))
+
+    def get_side_effect(request):
+        number = int(request.url.path.rsplit("/", 1)[1])
+        return httpx.Response(200, json=issue_payload(number, titles.get(number, "cam: t")))
+
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/g/r/-/issues").mock(side_effect=create_side_effect)
+        mock.get(path__regex=r"/g/r/-/issues/\d+").mock(side_effect=get_side_effect)
+        result = asyncio.run(tool.fn(content=("段落。" + chr(10) * 2 + "x" * 40000) * 3, title="t"))
+
+    data = json.loads(result)
+    assert "error" in data
+    assert "#1" in data["error"]
+
+
+def test_memory_list_state_invalid_rejected(monkeypatch):
+    """state 非法值前置拒绝（评审 warning：不再打到服务端吃 4xx）。"""
+    import asyncio
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_list")
+    result = asyncio.run(tool.fn(category=None, tags=None, state="all", limit=20))
+
+    data = json.loads(result)
+    assert "open/closed" in data["error"]

@@ -17,7 +17,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from .api import CNBApiClient
-from .memory import Memory, SearchResult, WriteResult
+from .memory import Memory, MemoryError, SearchResult, WriteResult
 
 mcp = FastMCP("cam", instructions="CNB 智能体记忆工具：写入、检索、管理跨会话记忆")
 
@@ -74,10 +74,17 @@ async def memory_write(
     tags: list[str] | None = None,
     category: str | None = None,
 ) -> str:
-    """写入记忆。tags 会自动补 tag/ 前缀，category 补 category/ 前缀。"""
-    async with CNBApiClient() as client:
-        result = await Memory(client).write(content, title=title, tags=tags, category=category)
-        return json.dumps(_write_out(result), ensure_ascii=False)
+    """写入记忆。tags 会自动补 tag/ 前缀，category 补 category/ 前缀。
+
+    部分成功（拆分场景部分分片已落盘后失败）时返回 JSON：error 字段
+    携带已落盘分片编号，供智能体循迹处理孤儿分片。
+    """
+    try:
+        async with CNBApiClient() as client:
+            result = await Memory(client).write(content, title=title, tags=tags, category=category)
+            return json.dumps(_write_out(result), ensure_ascii=False)
+    except MemoryError as err:
+        return json.dumps({"error": str(err)}, ensure_ascii=False)
 
 
 @mcp.tool(description="按编号精确读取记忆原文（正文 Markdown）")
@@ -149,6 +156,8 @@ async def memory_list(
     limit: int = 20,
 ) -> str:
     """过滤记忆列表。state 仅支持 open/closed（CNB API 不支持 all）。"""
+    if state not in ("open", "closed"):
+        return json.dumps({"error": "state 仅支持 open/closed（CNB API 不支持 all）"}, ensure_ascii=False)
     async with CNBApiClient() as client:
         issues = await Memory(client).list(
             category=category, tags=tags, state=state, limit=max(1, min(limit, 100))
@@ -167,7 +176,7 @@ async def memory_list_recent(limit: int = 5) -> str:
 @mcp.tool(
     description=(
         "语义检索记忆（主通道：知识库向量召回，按相关度排序）。"
-        "适合按内容模糊查找；知识库不可用时可降级为 memory_list 按标签浏览。"
+        "适合按内容模糊查找；知识库不可用时按错误提示降级为 keyword 标题检索。"
     )
 )
 async def memory_search(
