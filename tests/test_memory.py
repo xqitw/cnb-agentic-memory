@@ -186,6 +186,64 @@ async def test_write_splits_single_long_line(client: CnbApiClient, monkeypatch: 
     assert all(size <= 30000 for size in sizes)  # 每个分片都不超上限
 
 
+async def test_write_splits_no_newline_hard_cut(
+    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """不含任何换行的连续串（长 URL/base64 等）按 UTF-8 字符边界硬切。"""
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    long_content = "x" * 60000  # 无换行、无空行
+    counter = {"n": 0}
+    sizes: list[int] = []
+    titles: dict[int, str] = {}
+
+    def create_side_effect(request: httpx.Request) -> httpx.Response:
+        counter["n"] += 1
+        payload = json.loads(request.content)
+        sizes.append(len(payload["body"].encode("utf-8")))
+        titles[counter["n"]] = payload["title"]
+        return httpx.Response(201, json=issue_payload(counter["n"], payload["title"]))
+
+    def get_side_effect(request: httpx.Request) -> httpx.Response:
+        number = int(request.url.path.rsplit("/", 1)[1])
+        return httpx.Response(200, json=issue_payload(number, titles[number]))
+
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/group/repo/-/issues").mock(side_effect=create_side_effect)
+        mock.post(path__regex=r"/group/repo/-/issues/\d+/labels").respond(200, json=[])
+        mock.get(path__regex=r"/group/repo/-/issues/\d+").mock(side_effect=get_side_effect)
+        await memory.write(long_content, verify=False)
+
+    assert counter["n"] > 1
+    assert all(size <= 30000 for size in sizes)
+    assert sum(sizes) == 60000  # 无内容丢失
+
+
+def test_split_hard_cut_utf8_boundary() -> None:
+    """中文连续串硬切不产生半个字符（每片仍是合法 UTF-8）。"""
+    from cam.memory import _split_body
+
+    parts = _split_body("汉" * 20000)  # 每字 3 字节，总 60KB
+    assert len(parts) > 1
+    assert all(len(p.encode("utf-8")) <= 30000 for p in parts)
+    assert "".join(parts) == "汉" * 20000  # 无内容丢失、无乱码
+
+
+async def test_write_single_label_failure_reports_number(
+    client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """主路径（单条）创建成功但补标签失败：MemoryError 携带已落盘编号（评审意见：与拆分路径标准一致）。"""
+    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.post("/group/repo/-/issues").mock(side_effect=echo_issue(40))
+        mock.post("/group/repo/-/issues/40/labels").respond(500, json={"errcode": 500, "errmsg": "boom"})
+        with pytest.raises(MemoryError, match="#40") as exc_info:
+            await memory.write("内容", title="t", tags=["x"])
+
+    assert "ApiError" in str(exc_info.value)  # 携带原始错误摘要
+
+
 async def test_write_partial_failure_reports_created(
     client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -258,8 +316,12 @@ async def test_update_labels_only(client: CnbApiClient) -> None:
 
 async def test_update_nothing_raises(client: CnbApiClient) -> None:
     memory = Memory(client)
-    with pytest.raises(MemoryError, match="未指定任何变更"):
-        await memory.update(5)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        # 未提供任何变更时直接拒绝，零网络调用（评审意见：空变更前置）
+        with pytest.raises(MemoryError, match="未指定任何变更"):
+            await memory.update(5)
+
+    assert not mock.routes
 
 
 async def test_update_title_verified(client: CnbApiClient, monkeypatch: pytest.MonkeyPatch) -> None:

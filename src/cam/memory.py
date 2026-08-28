@@ -14,6 +14,8 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import httpx
+
 from .api import ApiError, CnbApiClient
 from .models import Comment, CreateCommentForm, CreateIssueForm, Issue, KbChunk, PatchIssueForm
 
@@ -88,10 +90,10 @@ def _first_line(content: str) -> str:
 
 
 def _split_body(content: str) -> _List[str]:
-    """超长正文拆分为不超过 MAX_BODY_BYTES 的多条（优先空行段落，保底按行）。
+    """超长正文拆分为不超过 MAX_BODY_BYTES 的多条。
 
-    单段落超限时二次按行拆分，无空行的超长单行（代码块/长文本）同样覆盖。
-    """
+    三级拆分点：空行段落 → 单行 → 硬切（UTF-8 字符边界，覆盖长 URL/
+    base64/minified JSON 等不含换行的连续串）。"""
     if len(content.encode("utf-8")) <= MAX_BODY_BYTES:
         return [content]
 
@@ -108,7 +110,7 @@ def _split_body(content: str) -> _List[str]:
     if buf:
         parts.append(buf)
 
-    # 第二轮：仍超限的片段按行拆（覆盖无空行的超长单行/代码块）
+    # 第二轮：仍超限的片段按行拆（覆盖无空行的超长多行文本/代码块）
     bounded: _List[str] = []
     for part in parts:
         if len(part.encode("utf-8")) <= MAX_BODY_BYTES:
@@ -123,7 +125,24 @@ def _split_body(content: str) -> _List[str]:
                 chunk += line
         if chunk:
             bounded.append(chunk)
-    return bounded or [content]
+
+    # 第三轮：仍超限的片段为不含换行的连续串（长 URL/base64 等），按 UTF-8
+    # 字符边界硬切（Python str 切片天然按码点，不会切出半个字符）
+    final: _List[str] = []
+    for part in bounded:
+        if len(part.encode("utf-8")) <= MAX_BODY_BYTES:
+            final.append(part)
+            continue
+        chunk = ""
+        for ch in part:
+            if chunk and len((chunk + ch).encode("utf-8")) > MAX_BODY_BYTES:
+                final.append(chunk)
+                chunk = ch
+            else:
+                chunk += ch
+        if chunk:
+            final.append(chunk)
+    return final or [content]
 
 
 class Memory:
@@ -194,7 +213,8 @@ class Memory:
         - 创建后补打标签（两步写入红线）
         - 超长内容自动拆分为多条，title 带 (i/n) 后缀关联
         - verify=False 可跳过回读校验（仅测试用）
-        - 拆分中途失败时抛出 MemoryError，携带已创建分片编号，便于循迹清理
+        - 任何一步失败时抛出 MemoryError，携带已落盘分片编号与原始错误摘要，
+          便于循迹清理（Issue 创建成功即记为已落盘，与后续步骤失败无关）
         """
         if not content.strip():
             raise MemoryError("记忆内容不能为空")
@@ -211,19 +231,21 @@ class Memory:
             for index, part in enumerate(parts):
                 suffix = f" ({index + 1}/{len(parts)})" if len(parts) > 1 else ""
                 final_title = base_title + suffix
-                # 两步写入：创建时不传 labels（新标签会被静默丢弃），创建后单独补打
+                # 两步写入：创建时不传 labels（新标签会被静默丢弃），创建后单独补打。
+                # create_issue 成功即视为该分片已落盘，后续任何失败都可循迹
                 issue = await self.client.create_issue(CreateIssueForm(title=final_title, body=part))
+                created.append(WriteResult(issue.number, final_title, self._url(issue.number)))
                 if all_labels:
                     await self.client.add_labels(issue.number, all_labels)
                 if verify:
                     await self._verify(issue.number, field="title", expect=final_title)
-                created.append(WriteResult(issue.number, final_title, self._url(issue.number)))
         except Exception as err:
-            if created:  # 拆分场景下已有分片落盘，必须让调用方可循迹
+            if created:  # 已有分片落盘（含落盘但无标签），必须让调用方可循迹
                 done = ", ".join(f"#{r.number}" for r in created)
+                reason = f"{type(err).__name__}: {err}"
                 raise MemoryError(
-                    f"写入拆分分片时失败（已完成 {len(created)}/{len(parts)}：{done}），"
-                    f"失败分片未创建；已创建分片可按需软删除清理"
+                    f"写入失败（已完成 {len(created)}/{len(parts)}：{done}），"
+                    f"已落盘分片可按需软删除清理；原始错误：{reason}"
                 ) from err
             raise
         return created[0]
@@ -244,18 +266,21 @@ class Memory:
         - tags/category 为追加语义：补打标签不影响已有标签（受 CNB 标签模型决定）
         - 各变更项独立生效，同次调用可同时更新正文/标题/标签
         """
+        if content is not None and not content.strip():
+            raise MemoryError("记忆内容不能为空")
         form = PatchIssueForm()
         if content is not None:
-            if not content.strip():
-                raise MemoryError("记忆内容不能为空")
             form.body = content
         if title is not None:
             form.title = normalize_title(title, content or title)
 
-        if form.model_dump(exclude_none=True):
-            await self.client.update_issue(number, form)
-
+        has_form_changes = bool(form.model_dump(exclude_none=True))
         labels = self._normalize_labels(tags, category)
+        if not has_form_changes and not labels:
+            raise MemoryError("update 未指定任何变更（content/title/tags/category 至少一项）")
+
+        if has_form_changes:
+            await self.client.update_issue(number, form)
         if labels:
             await self.client.add_labels(number, labels)
 
@@ -266,8 +291,6 @@ class Memory:
             new_title = form.title
             await self._verify(number, field="title", expect=new_title)
 
-        if not form.model_dump(exclude_none=True) and not labels:
-            raise MemoryError("update 未指定任何变更（content/title/tags/category 至少一项）")
         return await self.client.get_issue(number)
 
     async def append(self, number: int, note: str, *, verify: bool = True) -> Comment:
@@ -353,8 +376,8 @@ class Memory:
             seen_numbers.add(number)
             try:
                 issue = await self.client.get_issue(number)
-            except ApiError:
-                continue  # 命中已不可读（被清理等），跳过不中断整体检索
+            except (ApiError, httpx.HTTPError):
+                continue  # 命中不可读（被清理/网络异常等），跳过不中断整体检索
             if not include_closed and issue.state != STATE_OPEN:
                 continue
             results.append(

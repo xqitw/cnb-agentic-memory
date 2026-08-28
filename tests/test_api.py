@@ -175,6 +175,14 @@ def test_invalid_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.timeout == 30.0
 
 
+def test_non_positive_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CAM_TIMEOUT=0/负值回落默认（0 在 httpx 语义=永不超时，无合理用途）。"""
+    monkeypatch.setenv("CAM_TIMEOUT", "0")
+    assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
+    monkeypatch.setenv("CAM_TIMEOUT", "-5")
+    assert CnbApiClient(token="t", repo="g/r").timeout == 30.0
+
+
 async def test_non_json_2xx_raises_api_error(client: CnbApiClient) -> None:
     """2xx 但响应非 JSON（网关异常页等）→ ApiError 保留原文（评审意见：不掩盖真实响应）。"""
     with respx.mock(base_url=BASE) as mock:

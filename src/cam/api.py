@@ -35,11 +35,12 @@ def env(name: str, default: str | None = None) -> str | None:
 
 
 def parse_timeout(value: str | None) -> float:
-    """解析超时秒数，非法值回落默认（客户端与 Config 行为一致）。"""
+    """解析超时秒数：非法值或非正值（0/负数无合理用途）回落默认。"""
     try:
-        return float(value) if value else DEFAULT_TIMEOUT
+        timeout = float(value) if value else DEFAULT_TIMEOUT
     except ValueError:
         return DEFAULT_TIMEOUT
+    return timeout if timeout > 0 else DEFAULT_TIMEOUT
 
 
 class ApiError(Exception):
