@@ -1,6 +1,6 @@
 ---
 name: cam-skill
-description: 基于 CNB 平台的智能体记忆工具（cam）：跨会话写入/检索/管理记忆。写入时必须自己撰写 title（提炼 3~8 个高区分度关键词短语，keyword 检索只匹配 title）。当用户提到记忆、记住、之前、上次、经验、教训时使用。用法：cam CLI（write/get/append/update/delete/restore/list/recent/search）。
+description: 基于 CNB 平台的智能体记忆工具（cam）：跨会话写入/检索/管理记忆。写入时必须自己撰写 title（提炼 3~8 个高区分度关键词短语，keyword 检索只匹配 title）。当用户提到记忆、记住、之前、上次、经验、教训时使用。用法：cam CLI（write/get/append/update/delete/restore/list/recent/search/keyword）。
 ---
 
 # cam — 智能体记忆系统
@@ -9,7 +9,7 @@ description: 基于 CNB 平台的智能体记忆工具（cam）：跨会话写�
 
 把重要信息写入记忆仓库，之后用语义检索或分类浏览找回。适合回答"记住这个"、"帮我记一下"、"之前说过什么"、"上次是怎么解决的"、"查一下我们的记忆库"这类跨会话请求。
 
-**写入时必须自己撰写 title**（提炼 3~8 个高区分度关键词短语，keyword 标题检索只匹配 title）——title 质量决定记忆能否被找回。知识库不可用时，CLI 按第 3 节降级为分类/标签浏览；keyword 标题检索仅在 SDK/MCP 层提供。
+**写入时必须自己撰写 title**（提炼 3~8 个高区分度关键词短语，keyword 标题检索只匹配 title）——title 质量决定记忆能否被找回。检索有两个并列通道：语义检索（`search`，按内容模糊查找，需知识库）与关键词标题检索（`keyword`，仅匹配标题，无需知识库）；知识库不可用时用 `keyword` 或按第 3 节分类/标签浏览。三种入口（SDK/MCP/CLI）能力一致。
 
 ## 核心决策指引（重要）
 
@@ -17,9 +17,10 @@ description: 基于 CNB 平台的智能体记忆工具（cam）：跨会话写�
    好的 title = 高区分度关键词的短语（如 `cam: PostgreSQL 分区表 pg_partman`），
    坏的 title = 长句或概括性描述（如 `关于数据库优化的记录`）。工具会保证
    `cam:` 前缀与长度上限，但关键词质量由你决定。
-2. **找回记忆优先用 search**（语义召回，按内容模糊查找）；按已知分类/标签
-   浏览用 list。两者互补：search 适合"记得写过类似的东西"，list 适合
-   "看看 db 分类下都有什么"。
+2. **找回记忆按需选路**：按内容模糊查找（"记得写过类似的东西"）用 `search`
+   （语义召回）；title 含确切关键词（技术名词/编号/命令）用 `keyword`
+   （标题检索，无需知识库，更精准）；按已知分类/标签浏览用 `list`（适合
+   "看看 db 分类下都有什么"）。
 3. **追加 vs 更新**：在原记忆上补充新信息用 `append`（追加记录，进知识库
    可被检索）；信息本身错了需要改用 `update`（content 是全量替换，注意先
    `get` 拿到旧正文再合并）。
@@ -88,12 +89,19 @@ cam search "分区表 慢查询" --top-k 3
 
 - 返回按相关度排序，`state: closed` 的记忆默认被过滤（除非 `--include-closed`）
 - 用 `number` 可进一步 `cam get <n>` 看全文
-- 知识库未配置/不可用时命令会报错并提示降级方式
+- 知识库未配置/不可用时命令会报错，错误信息提示改用 `cam keyword`
 
-### 3. 按分类/标签浏览（知识库不可用时的降级方式）
+### 3. 关键词标题检索 / 按分类/标签浏览
 
-知识库未配置或不可用时，语义检索不可用；CLI 层没有 keyword 标题检索
-（那只在 SDK/MCP 内部），此时只能按已知分类/标签/时间浏览：
+**关键词标题检索**：仅匹配 title，无法检索正文，无需知识库——
+title 含确切关键词（技术名词/编号/命令）时比语义检索更精准：
+
+```bash
+cam keyword "pg_partman" --limit 10
+# → [{"number": 12, "title": "cam: PostgreSQL 分区表 pg_partman", ...}]
+```
+
+**按分类/标签浏览**（结构化过滤，与检索互补）：
 
 ```bash
 cam list --category db --limit 10

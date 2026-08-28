@@ -545,7 +545,7 @@ async def test_search_include_closed(client: CNBApiClient) -> None:
 
 
 async def test_search_kb_unavailable_suggests_fallback(client: CNBApiClient) -> None:
-    """知识库 404 → MemoryError 提示降级通道。"""
+    """知识库 404 → MemoryError 提示可改用 keyword_search。"""
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/knowledge/base/query").respond(
