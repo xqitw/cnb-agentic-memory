@@ -5,12 +5,14 @@
 - 写路径回读校验：所有写操作完成后 GET 回读确认（CNB API 存在静默失败形态）
 - title 由调用方（智能体）撰写，工具只保证不变量：前缀、长度上限、非空兜底
 - 软删除：PATCH state=closed + state_reason=not_planned，可 reopen 恢复
-- 超长拆分：单条记忆超过 MAX_BODY_BYTES 自动拆为多条，用 title 关联
+- 超长拆分：单条记忆超过 MAX_BODY_BYTES 自动拆为多条，用 title 关联；
+  拆分必须无损（"".join(parts) == content），分隔符归属后段保证拼接还原
 """
 
 from __future__ import annotations
 
 import asyncio
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -21,7 +23,6 @@ from .models import Comment, CreateCommentForm, CreateIssueForm, Issue, KbChunk,
 
 if TYPE_CHECKING:
     from builtins import list as _List  # noqa: UP035  # 避免与 Memory.list 方法名冲突
-
 # 软删除 / 生命周期状态约定
 STATE_OPEN = "open"
 STATE_CLOSED = "closed"
@@ -89,59 +90,99 @@ def _first_line(content: str) -> str:
     return "untitled memory"
 
 
-def _split_body(content: str) -> _List[str]:
-    """超长正文拆分为不超过 MAX_BODY_BYTES 的多条。
+def _byte_len(text: str) -> int:
+    """UTF-8 字节长度。"""
+    return len(text.encode("utf-8"))
 
-    三级拆分点：空行段落 → 单行 → 硬切（UTF-8 字符边界，覆盖长 URL/
-    base64/minified JSON 等不含换行的连续串）。"""
-    if len(content.encode("utf-8")) <= MAX_BODY_BYTES:
-        return [content]
 
-    # 第一轮：按空行（Markdown 段落）聚合
-    parts: _List[str] = []
+def _accumulate(units: list[str], limit: int = MAX_BODY_BYTES) -> list[str]:
+    """把单元（段落/行）聚合为不超过 limit 字节的片段。
+
+    分隔符随单元保留（单元自带换行），聚合为纯拼接，保证拼接无损。
+    字节计数器增量判断，避免对递增 buffer 反复全量编码（线性时间）。
+    """
+    parts: list[str] = []
     buf = ""
-    for para in content.split("\n\n"):
-        candidate = f"{buf}\n\n{para}" if buf else para
-        if buf and len(candidate.encode("utf-8")) > MAX_BODY_BYTES:
+    buf_bytes = 0
+    for unit in units:
+        unit_bytes = len(unit.encode("utf-8"))
+        if buf and buf_bytes + unit_bytes > limit:
             parts.append(buf)
-            buf = para
+            buf = unit
+            buf_bytes = unit_bytes
         else:
-            buf = candidate
+            buf += unit
+            buf_bytes += unit_bytes
     if buf:
         parts.append(buf)
+    return parts
 
-    # 第二轮：仍超限的片段按行拆（覆盖无空行的超长多行文本/代码块）
-    bounded: _List[str] = []
+
+def _hard_cut(part: str) -> list[str]:
+    """无分隔符的连续串按 UTF-8 字符边界硬切（码点切片不切半个字符）。
+
+    一次性建立码点到字节的前缀表，二分找切点，线性时间完成。
+    """
+    total = _byte_len(part)
+    prefix: list[int] = [0]
+    acc = 0
+    for ch in part:
+        acc += len(ch.encode("utf-8"))
+        prefix.append(acc)
+
+    pieces: list[str] = []
+    start_cp = 0
+    start_byte = 0
+    while start_byte < total:
+        max_end = start_byte + MAX_BODY_BYTES
+        if max_end >= total:
+            pieces.append(part[start_cp:])
+            break
+        end_cp = bisect_right(prefix, max_end) - 1
+        if end_cp <= start_cp:  # 单字符即超限（MAX_BODY_BYTES >= 4 时不会发生）
+            end_cp = start_cp + 1
+        pieces.append(part[start_cp:end_cp])
+        start_byte = prefix[end_cp]
+        start_cp = end_cp
+    return pieces
+
+
+def _split_body(content: str) -> list[str]:
+    """超长正文拆分为不超过 MAX_BODY_BYTES 的多条。
+
+    三级拆分点：空行段落 → 单行 → 硬切（UTF-8 字符边界，覆盖长 URL、
+    base64、minified JSON 等不含换行的连续串）。
+    恒满足 "".join(parts) == content：分隔符随单元保留，聚合为纯拼接。
+    """
+    if _byte_len(content) <= MAX_BODY_BYTES:
+        return [content]
+
+    # 第一轮：按空行（Markdown 段落）聚合，空行分隔符归属后段
+    paragraphs: list[str] = []
+    for index, para in enumerate(content.split("\n\n")):
+        paragraphs.append(para if index == 0 else f"\n\n{para}")
+    parts = _accumulate(paragraphs)
+
+    # 第二轮：仍超限的片段按行拆（覆盖无空行的超长多行文本/代码块）。
+    # 行自带行尾换行（keepends），同为纯拼接
+    bounded: list[str] = []
     for part in parts:
-        if len(part.encode("utf-8")) <= MAX_BODY_BYTES:
+        if _byte_len(part) <= MAX_BODY_BYTES:
             bounded.append(part)
             continue
-        chunk = ""
-        for line in part.splitlines(keepends=True):
-            if chunk and len((chunk + line).encode("utf-8")) > MAX_BODY_BYTES:
-                bounded.append(chunk)
-                chunk = line
-            else:
-                chunk += line
-        if chunk:
-            bounded.append(chunk)
+        lines = part.splitlines(keepends=True)
+        # splitlines 会丢掉末尾换行符——原文以换行结尾时补回末行
+        if part.endswith("\n") and lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        bounded.extend(_accumulate(lines))
 
-    # 第三轮：仍超限的片段为不含换行的连续串（长 URL/base64 等），按 UTF-8
-    # 字符边界硬切（Python str 切片天然按码点，不会切出半个字符）
-    final: _List[str] = []
+    # 第三轮：仍超限的片段为不含换行的连续串，硬切
+    final: list[str] = []
     for part in bounded:
-        if len(part.encode("utf-8")) <= MAX_BODY_BYTES:
+        if _byte_len(part) <= MAX_BODY_BYTES:
             final.append(part)
             continue
-        chunk = ""
-        for ch in part:
-            if chunk and len((chunk + ch).encode("utf-8")) > MAX_BODY_BYTES:
-                final.append(chunk)
-                chunk = ch
-            else:
-                chunk += ch
-        if chunk:
-            final.append(chunk)
+        final.extend(_hard_cut(part))
     return final or [content]
 
 
@@ -157,13 +198,13 @@ class Memory:
         return self.client.web_url(number)
 
     @staticmethod
-    def _normalize_labels(tags: list[str] | None, category: str | None) -> _List[str]:
+    def _normalize_labels(tags: list[str] | None, category: str | None) -> list[str]:
         """统一标签归一化：tags 补 tag/ 前缀，category 补 category/ 前缀（幂等）。
 
         已带任一命名空间前缀的值原样保留；空值过滤，避免产生空标签。
         """
         namespaced_prefixes = (CATEGORY_PREFIX, TAG_PREFIX)
-        labels: _List[str] = []
+        labels: list[str] = []
         stripped_category = (category or "").strip()
         if stripped_category:
             labels.append(
@@ -211,7 +252,7 @@ class Memory:
         - title 由调用方撰写（提炼高区分度关键词短语），未提供时兜底为正文首行截取；
           工具保证不变量：cam: 前缀 + 长度上限（keyword 检索只匹配标题）
         - 创建后补打标签（两步写入红线）
-        - 超长内容自动拆分为多条，title 带 (i/n) 后缀关联
+        - 超长内容自动拆分为多条，title 带 (i/n) 后缀关联；拆分无损
         - verify=False 可跳过回读校验（仅测试用）
         - 任何一步失败时抛出 MemoryError，携带已落盘分片编号与原始错误摘要，
           便于循迹清理（Issue 创建成功即记为已落盘，与后续步骤失败无关）
@@ -353,16 +394,17 @@ class Memory:
     ) -> _List[SearchResult]:
         """语义检索（主通道：知识库向量召回 → 解析 number → 回读原文补齐元信息）。
 
-        - 知识库不可用（404）时抛出 MemoryError，由调用方决定是否降级为
-          client.list_issues(keyword=...) 标题检索（降级通道）
+        - 知识库不可用（404/网络异常）时抛出 MemoryError，由调用方决定是否
+          降级为 client.list_issues(keyword=...) 标题检索（降级通道）
         - include_closed=False 时过滤掉已软删除的记忆
-        - 单个命中回读失败（如已删除）跳过该条，不中断整体检索
+        - 单个命中回读失败（如已删除/网络异常）跳过该条，不中断整体检索
         """
         try:
             chunks: _List[KbChunk] = await self.client.query_knowledge_base(query, top_k=top_k)
-        except ApiError as err:
+        except (ApiError, httpx.HTTPError) as err:
+            reason = f"{type(err).__name__}: {err}"
             raise MemoryError(
-                f"知识库检索失败（{err.status_code}）。"
+                f"知识库检索失败（{reason}）。"
                 f"可降级为标题检索：client.list_issues(keyword=...)，"
                 f"注意知识库需先配置 .cnb.yml 流水线才会建立"
             ) from err

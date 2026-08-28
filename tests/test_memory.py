@@ -229,6 +229,57 @@ def test_split_hard_cut_utf8_boundary() -> None:
     assert "".join(parts) == "汉" * 20000  # 无内容丢失、无乱码
 
 
+def test_split_lossless_with_blank_lines() -> None:
+    """含空行分隔的内容拆分无损（评审 critical：分隔符不得被吞）。"""
+    from cam.memory import _split_body
+
+    content = "a" * 29990 + "\n\n" + "b" * 20
+    parts = _split_body(content)
+    assert "".join(parts) == content
+    assert all(len(p.encode("utf-8")) <= 30000 for p in parts)
+
+
+def test_split_fuzz_lossless() -> None:
+    """随机混合正文 fuzz：拆分恒无损且各片不超限（评审建议的 fuzz 断言）。"""
+    import random
+
+    from cam.memory import _split_body
+
+    rng = random.Random(42)
+    for _ in range(60):
+        segs = []
+        for _ in range(rng.randint(1, 20)):
+            kind = rng.random()
+            n = rng.randint(1, 1500)
+            if kind < 0.3:
+                segs.append("a" * n)
+            elif kind < 0.5:
+                segs.append("汉" * (n // 3))
+            elif kind < 0.7:
+                segs.append("line\n" * (n // 5))
+            else:
+                segs.append("x" * n)
+        content = "\n\n".join(segs)
+        if rng.random() < 0.3:
+            content += "\n\n"
+        parts = _split_body(content)
+        assert "".join(parts) == content  # 恒无损
+        assert all(len(p.encode("utf-8")) <= 30000 for p in parts)  # 恒有界
+
+
+async def test_search_network_error_suggests_fallback(client: CnbApiClient) -> None:
+    """知识库网络异常（非 404）同样触发 MemoryError 降级提示（评审 warning）。"""
+    import httpx as httpx_mod
+
+    memory = Memory(client)
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/group/repo/-/knowledge/base/query").mock(side_effect=httpx_mod.ConnectError("net down"))
+        with pytest.raises(MemoryError, match="降级") as exc_info:
+            await memory.search("查询")
+
+    assert "ConnectError" in str(exc_info.value)  # 携带原始错误类型
+
+
 async def test_write_single_label_failure_reports_number(
     client: CnbApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
