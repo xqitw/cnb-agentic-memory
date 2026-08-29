@@ -24,32 +24,31 @@ include:
     script: npx --yes markdownlint-cli2 '**/*.md'
 
 # 复用片段:多版本 Python 测试（3.11 / 3.12 / 3.13，与 classifiers 声明一致）
-# dev-base 内置 uv，用 --python 指定版本；首次运行 uv 会自动下载对应版本
-.python-311: &python-311
+# dev-base 内置 uv，用 UV_PYTHON 环境变量指定版本（uv 会按需自动下载对应 Python）
+.python-env-base: &python-env-base
   docker:
     image: docker.cnb.cool/xqitw/docker/dev-base:latest
   runner:
     cpus: 2
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+
+.python-311: &python-311
+  <<: *python-env-base
   env:
     UV_CACHE_DIR: /root/.cache/uv
     UV_PYTHON: 3.11
   stages: *test-stages
 
 .python-312: &python-312
-  docker:
-    image: docker.cnb.cool/xqitw/docker/dev-base:latest
-  runner:
-    cpus: 2
+  <<: *python-env-base
   env:
     UV_CACHE_DIR: /root/.cache/uv
     UV_PYTHON: 3.12
   stages: *test-stages
 
 .python-313: &python-313
-  docker:
-    image: docker.cnb.cool/xqitw/docker/dev-base:latest
-  runner:
-    cpus: 2
+  <<: *python-env-base
   env:
     UV_CACHE_DIR: /root/.cache/uv
     UV_PYTHON: 3.13
