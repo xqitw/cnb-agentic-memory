@@ -1,6 +1,7 @@
 # CNB Agentic Memory
 
 [![Latest Release](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/release)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/release.link)
+[![PyPI](https://img.shields.io/pypi/v/cnb-agentic-memory.svg)](https://pypi.org/project/cnb-agentic-memory/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org)
 ![CI](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/git/latest/ci/pipeline-as-code?branch=main)
