@@ -5,7 +5,7 @@
 - **一记忆 = 一 Issue**：Issue `number` 是记忆唯一标识，免自定义 id / 免并发仲裁
 - **零 git 依赖**：全部走 CNB Open API，无 git 二进制 / 无本地 clone
 - **多形态**：SDK（Python）→ CLI（`cnb-agentic-memory`）→ MCP Server（`cnb-agentic-memory-mcp`）→ Agent Skill，按需取用
-- **实测背书**：语义召回 0.98+、两步写入、写后回读校验等架构红线全部来自 PoC 实测
+- **实测背书**：语义召回在 PoC 实测样例中可达 0.98+；两步写入、写后回读校验等架构红线均来自实测
 
 ## 安装
 

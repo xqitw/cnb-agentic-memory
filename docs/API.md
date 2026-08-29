@@ -95,7 +95,7 @@ except ApiError as err:
 - **超长拆分**：正文超过 30KB 自动按段落拆为多条，title 带 `(i/n)` 序号关联；`WriteResult.parts` 携带全部分片供循迹
 - **软删除**：无硬删除接口（CNB DELETE 返回 404），`delete` 后可 `restore`
 - **标签约定**：`category` 自动补 `category:` 前缀（对齐 CNB 平台分类约定，选择器中单选），`tags` 为普通标签原样保留；记忆仓库须为专用仓库（全部 Issue 均为记忆）
-- **检索分层**：语义检索走知识库向量召回（实测 0.98+）；`keyword_search` 是与它并列的第二检索方法（标题检索，无需知识库），供 title 含确切关键词时精准直达
+- **检索分层**：语义检索走知识库向量召回（相关度受语料规模、查询内容与切分策略影响，PoC 实测样例中可达 0.98+）；`keyword_search` 是与它并列的第二检索方法（标题检索，无需知识库），供 title 含确切关键词时精准直达
 
 ## cnb_agentic_memory.models — 数据模型
 
