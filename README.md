@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org)
 ![CI](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/git/latest/ci/pipeline-as-code?branch=main)
+![git-clone-yyds](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/git/latest/ci/git-clone-yyds)
 [![Star](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/star)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/star.link)
 [![Fork](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/fork)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/fork.link)
 
