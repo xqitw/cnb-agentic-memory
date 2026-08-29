@@ -37,7 +37,7 @@ cnb-agentic-memory — 基于 CNB 平台的通用智能体记忆工具。以 CNB
 
 - **事实唯一权威**：docs/（标签字符白名单、title 实测结论、软删除与知识库
   向量的关系等），其他通道一律是它的摘要
-- **四个同步点**：
+- **五个同步点**：
   1. skills/cnb-agentic-memory/SKILL.md —— skill 通道的原则全文
   2. src/cnb_agentic_memory/mcp_server.py —— MCP 通道：server 级
      instructions（原则精简版）+ 各工具 description（单工具语义）
