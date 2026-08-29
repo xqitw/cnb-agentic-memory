@@ -50,8 +50,13 @@ MAX_PAGE_SIZE = 100
 # 长度必须在1到50个字符之间"）。写前预检用，不合法直接报错，
 # 避免 Issue 已落盘后标签步骤才失败产生孤儿分片
 LABEL_MAX_CHARS = 50
-# 白名单：CJK 统一表意文字、字母数字、允许的半角符号、全角标点/字母/数字、空白
-_LABEL_ALLOWED = re.compile(r"[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\w.:\-/\\ ]+")
+# 白名单显式字符类（不用 \\w：其 Unicode 语义会放行拉丁扩展字母等
+# 未实测字符，预检口径必须与服务端实测严格一致）：
+# 汉字 U+4E00-9FFF、CJK 标点 U+3000-303F、全角字符 U+FF00-FFEF、
+# 中文常用全角省略号 …(U+2026)、破折号 —(U+2014)、
+# ASCII 字母数字与实测允许的符号 . : - / \\ 及空格（下划线显式列出，
+# 对齐报错原文"下划线(_)"）
+_LABEL_ALLOWED = re.compile(r"[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\u2014\u2026A-Za-z0-9_.:\-/\\ ]+")
 
 
 def validate_label(label: str) -> str | None:
@@ -120,7 +125,10 @@ def normalize_title(title: str | None, content: str) -> str:
     不做语义提炼，只保证与内容相关且长度有界。
     """
     raw = title.strip() if title and title.strip() else _first_line(content)
-    raw = _CONTROL_CHARS.sub("", raw)
+    raw = _CONTROL_CHARS.sub("", raw).strip()
+    # 清洗后为空（title 全为控制字符）→ 回退正文首行再清洗
+    if not raw:
+        raw = _CONTROL_CHARS.sub("", _first_line(content))
     body = raw[:MAX_TITLE_CHARS].strip()
     return body or "untitled memory"
 
@@ -337,7 +345,7 @@ class Memory:
                     await self._verify(issue.number, field="title", expect=final_title)
         except Exception as err:
             if created:  # 已有分片落盘（含落盘但无标签），必须让调用方可循迹
-                health = await self._health_check_shards(created, parts)
+                health = await self._health_check_shards(created, parts, all_labels)
                 reason = f"{type(err).__name__}: {err}"
                 raise MemoryError(
                     f"写入失败（已完成 {len(created)}/{len(parts)}）。"
@@ -354,22 +362,36 @@ class Memory:
             else WriteResult(created[0].number, created[0].title, tuple(created))
         )
 
-    async def _health_check_shards(self, created: _List[WriteResult], parts: _List[str]) -> str:
+    async def _health_check_shards(
+        self,
+        created: _List[WriteResult],
+        parts: _List[str],
+        expect_labels: _List[str] | None = None,
+    ) -> str:
         """失败时对已落盘分片逐个体检：回读确认正文完整性与标签状态。
 
         把"编号已知但状态不明"的孤儿分片变成可直接执行的行动建议；
         单片回读失败不中断整体体检（该片标注"状态未知，请 get 确认"）。
+        created 与 parts 按创建顺序一一对应（顺序创建，任一片失败即中断，
+        created 恒为 parts 前缀），索引比对无错位。
         """
         lines: list[str] = []
+        expect_set = set(expect_labels or [])
         for index, result in enumerate(created):
             try:
                 issue = await self.client.get_issue(result.number)
                 # get_issue 走单条详情接口（实测回显完整正文，与 list 接口
                 # 不回显正文的结论区分，见 docs/ 实测记录），比对可靠
                 body_ok = issue.body == parts[index]
-                labels_ok = bool(issue.label_names)
+                # 集合比对区分"全部已打"与"部分缺失"（add_labels 批量
+                # 部分失败场景）；expect_labels 为空时仅判断是否打标
+                missing = expect_set - set(issue.label_names) if expect_set else set()
+                labels_ok = not missing if expect_set else bool(issue.label_names)
                 state_desc = "正文完整" if body_ok else "正文与期望不一致"
-                state_desc += "、标签已打" if labels_ok else "、标签缺失"
+                if expect_set and missing:
+                    state_desc += f"、标签缺失（缺 {sorted(missing)}）"
+                else:
+                    state_desc += "、标签已打" if labels_ok else "、标签缺失"
                 lines.append(
                     f"  #{result.number} ({index + 1}/{len(parts)}) {state_desc}"
                     f" → 建议：update {result.number} 修正/补齐"
