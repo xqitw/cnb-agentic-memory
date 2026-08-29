@@ -25,7 +25,8 @@
 | `cam restore NUMBER` | 恢复软删除的记忆 |
 | `cam list [--category] [--tag]... [--state] [--limit]` | 按分类/标签过滤列表 |
 | `cam recent [--limit]` | 最近更新的记忆 |
-| `cam search QUERY [--top-k] [--include-closed]` | 语义检索（知识库召回 + 元信息回读） |
+| `cam search QUERY [--top-k] [--include-closed]` | 语义检索（知识库召回 + 元信息回读，按内容模糊查找；与 `cam keyword` 并列） |
+| `cam keyword QUERY [--limit] [--include-closed]` | 关键词标题检索（仅匹配标题，无需知识库；title 含确切关键词时更精准） |
 
 ## 示例
 
@@ -49,8 +50,11 @@ cam get 12
 cam append 12 "追加了 pg_partman 配置示例"
 cam delete 12   # 软删除，cam restore 12 可恢复
 
-# 检索（需仓库配置 knowledge:update 流水线，写入后约 1~2 分钟可检索）
+# 语义检索（需仓库配置 knowledge:update 流水线，写入后约 1~2 分钟可检索）
 cam search "分区表 慢查询" --top-k 3
+
+# 关键词标题检索（与 search 并列，无需知识库；title 含确切关键词时更精准）
+cam keyword "pg_partman" --limit 10
 
 # 列表
 cam list --category db --limit 10

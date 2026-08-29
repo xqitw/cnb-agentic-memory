@@ -212,7 +212,7 @@ def search(
     top_k: int = typer.Option(5, "--top-k", "-k", help="返回条数上限（1~100）"),
     include_closed: bool = typer.Option(False, "--include-closed", help="包含已软删除的记忆"),
 ) -> None:
-    """语义检索（知识库向量召回 → 回读补齐元信息）。"""
+    """语义检索（知识库向量召回，按内容模糊查找；与 cam keyword 并列）。"""
     top_k = max(1, min(top_k, 100))
 
     def run(memory: Memory) -> Any:
@@ -232,6 +232,22 @@ def search(
             for r in results
         ]
     )
+
+
+@app.command()
+def keyword(
+    query: str = typer.Argument(..., help="标题关键词（CNB keyword 检索只匹配标题，无法检索正文）"),
+    limit: int = typer.Option(20, "--limit", "-l", help="返回条数上限（1~100）"),
+    include_closed: bool = typer.Option(False, "--include-closed", help="包含已软删除的记忆"),
+) -> None:
+    """关键词标题检索（与语义检索 cam search 并列，按需选择）。"""
+    limit = max(1, min(limit, 100))
+
+    def run(memory: Memory) -> Any:
+        return memory.keyword_search(query, limit=limit, include_closed=include_closed)
+
+    issues = _execute(run)
+    _dump([_issue_out(i) for i in issues])
 
 
 def main() -> None:

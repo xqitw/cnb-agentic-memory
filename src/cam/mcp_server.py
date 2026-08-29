@@ -175,8 +175,9 @@ async def memory_list_recent(limit: int = 5) -> str:
 
 @mcp.tool(
     description=(
-        "语义检索记忆（主通道：知识库向量召回，按相关度排序）。"
-        "适合按内容模糊查找；知识库不可用时按错误提示降级为 keyword 标题检索。"
+        "语义检索记忆（知识库向量召回，按相关度排序）。适合按内容模糊查找，"
+        "即使记不清确切用词也能命中；若记忆 title 中含有确切关键词（技术名词、"
+        "编号），用 memory_keyword_search 更精准。知识库不可用时按错误提示处理。"
     )
 )
 async def memory_search(
@@ -190,6 +191,26 @@ async def memory_search(
             query, top_k=max(1, min(top_k, 100)), include_closed=include_closed
         )
         return json.dumps(_search_out(results), ensure_ascii=False)
+
+
+@mcp.tool(
+    description=(
+        "关键词标题检索：仅匹配记忆标题，无法检索正文。"
+        "当记忆 title 中含有确切关键词（技术名词、编号、命令）时比语义检索更精准。"
+        "与 memory_search 并列的第二检索方法，按需选择。"
+    )
+)
+async def memory_keyword_search(
+    query: str,
+    limit: int = 20,
+    include_closed: bool = False,
+) -> str:
+    """关键词标题检索记忆。"""
+    async with CNBApiClient() as client:
+        issues = await Memory(client).keyword_search(
+            query, limit=max(1, min(limit, 100)), include_closed=include_closed
+        )
+        return json.dumps([_issue_out(i) for i in issues], ensure_ascii=False)
 
 
 def main() -> None:

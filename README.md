@@ -41,6 +41,12 @@ async def main() -> None:
         for hit in hits:
             print(hit.score, hit.number, hit.title)
 
+        # 关键词标题检索（与语义检索并列，仅匹配 title，无需知识库；
+        # title 含确切关键词时更精准）
+        issues = await memory.keyword_search("pg_partman", limit=10)
+        for issue in issues:
+            print(issue.number, issue.title)
+
 
 asyncio.run(main())
 ```

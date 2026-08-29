@@ -86,7 +86,8 @@ except ApiError as err:
 | `get(number)` | 精确读取记忆原文 |
 | `list(*, category, tags, state, limit)` | 按分类/标签过滤列表（结构化过滤，与语义检索解耦） |
 | `list_recent(limit=5)` | 最近更新的记忆 |
-| `search(query, *, top_k, include_closed)` | 语义检索：知识库召回 → 解析 `number` → 回读补齐元信息。知识库不可用时抛 `MemoryError` 并提示降级方式 |
+| `keyword_search(query, *, limit, include_closed)` | 关键词标题检索：仅匹配标题（CNB keyword 检索特性），无需知识库；仅返回 cam 管理的记忆（命名空间标签过滤）；`include_closed=True` 时 open/closed 各查一次合并去重，按 `updated_at` 降序 |
+| `search(query, *, top_k, include_closed)` | 语义检索：知识库召回 → 解析 `number` → 回读补齐元信息。知识库不可用时抛 `MemoryError`，错误信息提示可改用 `keyword_search` |
 
 设计约定：
 
@@ -96,7 +97,7 @@ except ApiError as err:
 - **超长拆分**：正文超过 30KB 自动按段落拆为多条，title 带 `(i/n)` 序号关联；`WriteResult.parts` 携带全部分片供循迹
 - **软删除**：无硬删除接口（CNB DELETE 返回 404），`delete` 后可 `restore`
 - **标签命名空间**：`tags` 自动补 `tag/` 前缀、`category` 补 `category/` 前缀（已带前缀则原样保留，幂等）
-- **检索分层**：主通道知识库向量召回（实测 0.98+），降级通道 `client.list_issues(keyword=...)` 标题检索
+- **检索分层**：语义检索走知识库向量召回（实测 0.98+）；`keyword_search` 是与它并列的第二检索方法（标题检索，无需知识库），供 title 含确切关键词时精准直达
 
 ## cam.models — 数据模型
 

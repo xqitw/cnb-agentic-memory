@@ -28,8 +28,8 @@ def _tool_names() -> list[str]:
     return [t.name for t in mcp._tool_manager.list_tools()]
 
 
-def test_nine_tools_registered() -> None:
-    """9 个记忆操作全部注册为 MCP 工具。"""
+def test_ten_tools_registered() -> None:
+    """10 个记忆操作全部注册为 MCP 工具（含关键词标题检索）。"""
     assert set(_tool_names()) == {
         "memory_write",
         "memory_get",
@@ -40,6 +40,7 @@ def test_nine_tools_registered() -> None:
         "memory_list",
         "memory_list_recent",
         "memory_search",
+        "memory_keyword_search",
     }
 
 
@@ -177,3 +178,57 @@ def test_memory_list_state_invalid_rejected(monkeypatch):
 
     data = json.loads(result)
     assert "open/closed" in data["error"]
+
+
+def test_keyword_search_basic(monkeypatch):
+    """关键词标题检索：两态合并去重、按 updated_at 降序。"""
+    import asyncio
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_keyword_search")
+
+    def issue(number, updated):
+        return {
+            "number": str(number),
+            "title": "cam: kw " + str(number),
+            "body": "",
+            "state": "open",
+            "labels": [{"name": "tag/x"}],
+            "comment_count": 0,
+            "updated_at": updated,
+        }
+
+    open_items = [issue(5, "2026-01-05T00:00:00Z"), issue(9, "2026-01-09T00:00:00Z")]
+    closed_items = [issue(7, "2026-01-07T00:00:00Z")]
+
+    def make_handler(items):
+        def handler(request):
+            return httpx.Response(200, json=items)
+
+        return handler
+
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues").mock(
+            side_effect=lambda request: (
+                httpx.Response(200, json=open_items)
+                if dict(request.url.params).get("state") == "open"
+                else httpx.Response(200, json=closed_items)
+            )
+        )
+        result = asyncio.run(tool.fn(query="kw", include_closed=True))
+
+    data = json.loads(result)
+    assert [i["number"] for i in data] == [9, 7, 5]  # updated_at 降序
+
+
+def test_keyword_search_rejects_empty(monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_keyword_search")
+    with pytest.raises(Exception, match="检索词不能为空"):
+        asyncio.run(tool.fn(query="   "))
