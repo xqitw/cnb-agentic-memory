@@ -180,6 +180,129 @@ def test_memory_list_state_invalid_rejected(monkeypatch):
     assert "open/closed" in data["error"]
 
 
+def test_memory_list_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_list 正常路径返回记忆数组（state 校验已由另一用例覆盖）。"""
+    import asyncio
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_list")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues").respond(200, json=[issue_payload(5, "分类记忆")])
+        result = asyncio.run(tool.fn(category="db", tags=None, state="open", limit=10))
+
+    data = json.loads(result)
+    assert data[0]["number"] == 5
+
+
+def test_memory_search_returns_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_search 返回语义召回形状（score/chunk/number/title/state）。"""
+    import asyncio
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_search")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/knowledge/base/query").respond(
+            200,
+            json=[
+                {
+                    "score": 0.99,
+                    "chunk": "命中片段",
+                    "metadata": {"path": "/g/r/-/issues/11", "type": "issue"},
+                }
+            ],
+        )
+        mock.get("/g/r/-/issues/11").respond(200, json=issue_payload(11, "命中记忆"))
+        result = asyncio.run(tool.fn(query="查询", top_k=3))
+
+    data = json.loads(result)
+    assert data[0]["score"] == 0.99
+    assert data[0]["chunk"] == "命中片段"
+    assert data[0]["number"] == 11
+    assert data[0]["state"] == "open"
+
+
+def test_memory_update_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_update 返回更新后的记忆 JSON（含 labels 形状）。"""
+    import asyncio
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_update")
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.patch("/g/r/-/issues/9").respond(200, json=issue_payload(9, "新标题"))
+        mock.post("/g/r/-/issues/9/labels").respond(200, json=[])
+        mock.get("/g/r/-/issues/9").respond(200, json=issue_payload(9, "新标题"))
+        result = asyncio.run(tool.fn(number=9, title="新标题"))
+
+    data = json.loads(result)
+    assert data["number"] == 9
+    assert data["title"] == "新标题"
+
+
+def test_memory_append_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_append 返回评论 JSON（id/body/created_at）。"""
+    import asyncio
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_append")
+    with respx.mock(base_url=BASE) as mock:
+        mock.post("/g/r/-/issues/9/comments").respond(
+            200, json={"id": "c1", "body": "补充内容", "created_at": "2026-01-01T00:00:00Z"}
+        )
+        mock.get("/g/r/-/issues/9/comments").respond(
+            200, json=[{"id": "c1", "body": "补充内容", "created_at": "2026-01-01T00:00:00Z"}]
+        )
+        result = asyncio.run(tool.fn(number=9, note="补充内容"))
+
+    data = json.loads(result)
+    assert data["id"] == "c1"
+    assert data["body"] == "补充内容"
+
+
+def test_memory_delete_and_restore(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_delete 软删除、memory_restore 恢复，均返回 number/state。"""
+    import asyncio
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    delete_tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_delete")
+    restore_tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_restore")
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.patch("/g/r/-/issues/9").respond(200, json=issue_payload(9, "t", state="closed"))
+        mock.get("/g/r/-/issues/9").respond(200, json=issue_payload(9, "t", state="closed"))
+        data = json.loads(asyncio.run(delete_tool.fn(number=9)))
+    assert data == {"number": 9, "state": "closed"}
+
+    with respx.mock(base_url=BASE) as mock:
+        mock.patch("/g/r/-/issues/9").respond(200, json=issue_payload(9, "t", state="open"))
+        data = json.loads(asyncio.run(restore_tool.fn(number=9)))
+    assert data == {"number": 9, "state": "open"}
+
+
+def test_memory_list_recent_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_list_recent 返回记忆数组。"""
+    import asyncio
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_list_recent")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues").respond(200, json=[issue_payload(3, "最近")])
+        result = asyncio.run(tool.fn(limit=5))
+
+    data = json.loads(result)
+    assert data[0]["number"] == 3
+
+
 def test_keyword_search_basic(monkeypatch):
     """关键词标题检索：两态合并去重、按 updated_at 降序。"""
     import asyncio
