@@ -9,96 +9,75 @@
 [![Star](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/star)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/star.link)
 [![Fork](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/fork)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/fork.link)
 
-基于 [CNB](https://cnb.cool) 平台的通用智能体记忆工具：以 Issue 为存储、知识库为语义检索，把 CNB 的 Issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。
+基于 [CNB](https://cnb.cool) 平台的智能体记忆工具：以 Issue 为存储、知识库为语义检索，把 CNB 的 Issue、知识库、检索能力组合成一个开箱即用的记忆层。
 
-- **一记忆 = 一 Issue**：Issue `number` 是记忆唯一标识，免自定义 id / 免并发仲裁
-- **零 git 依赖**：全部走 CNB Open API，无 git 二进制 / 无本地 clone
-- **多形态**：SDK（Python）→ CLI（`cnb-agentic-memory`，MCP Server 由其 `mcp` 子命令提供）→ Agent Skill，按需取用
-- **实测背书**：语义召回在 PoC 实测样例中可达 0.98+；两步写入、写后回读校验等架构红线均来自实测
+## 功能特性
+
+- **一记忆 = 一 Issue** — Issue `number` 即记忆唯一标识，免自定义 id / 免并发仲裁
+- **双通道检索** — 知识库语义检索（按内容模糊查找）+ 关键词标题检索（无需知识库），按需选路
+- **结构化组织** — 分类（`category:xxx`，CNB 平台约定）与标签过滤，适合按已知维度浏览
+- **多形态** — Python SDK / CLI / MCP Server / Agent Skill，同一语义层按需取用
+- **实测背书** — 两步写入、写后回读校验、超长拆分等架构红线全部来自 PoC 实测
+
+## 前置准备
+
+开始使用前需要准备三件事：
+
+1. **创建专用私有仓库**——作为记忆仓库。必须是专用仓库（全部 Issue 均为记忆），检索与列表不做记忆/普通 Issue 区分
+2. **获取 CNB 访问令牌**——在 CNB 个人设置中创建，需 `repo-issue:rw`（Issue 读写）+ `repo-code:r`（知识库检索）权限
+3. **配置知识库入库流水线**——在记忆仓库的 `.cnb.yml` 挂载 `knowledge:update` 流水线（`$` 键下），语义检索依赖它；**必须先配置再写入**，错过事件的记忆不会被补录
+
+> 令牌与配置的完整说明见 [docs/API.md · 配置](docs/API.md#配置)；流水线 YAML 示例见 [docs/API.md · 记忆仓库前置条件](docs/API.md#记忆仓库前置条件)。
 
 ## 安装
 
 ```bash
-uv add cnb-agentic-memory             # SDK + CLI
-uv add "cnb-agentic-memory[mcp]"       # 含 MCP Server
-
-# 或用 pip
-pip install "cnb-agentic-memory[mcp]"
-
-# MCP Server 启动（stdio，接入 Claude Desktop / CNB AI 助手等 MCP 客户端；需 [mcp] extra）
-cnb-agentic-memory mcp
+uvx cnb-agentic-memory --help                  # 免安装直接运行（推荐）
+uv add "cnb-agentic-memory[mcp]"               # 或安装为依赖（含 MCP Server）
+pip install "cnb-agentic-memory[mcp]"          # 或 pip
 ```
 
-## 快速开始（SDK）
+## 快速开始
 
-> **前置条件**：记忆仓库须为**专用仓库**（仓库中全部 Issue 均为记忆，不与普通 Issue 混用）；语义检索还需在仓库配置知识库同步流水线，详见 [docs/API.md](docs/API.md#记忆仓库前置条件)。
+配置环境变量（四种形态通用）：
 
-```python
-import asyncio
-
-from cnb_agentic_memory import CNBApiClient, Memory
-
-
-async def main() -> None:
-    async with CNBApiClient(token="<token>", repo="group/memory") as client:
-        memory = Memory(client)
-
-        # 写入：两步写入 + 回读校验；title 由调用方撰写（建议提炼关键词短语，
-        # keyword 检索只匹配标题），未提供时兜底为正文首行截取
-        result = await memory.write(
-            "PostgreSQL 分区表使用 pg_partman 解决慢查询，按月分区",
-            title="PostgreSQL 分区表 pg_partman",
-            tags=["postgresql"],
-            category="db",
-        )
-        print(result.number, result.title)
-
-        # 语义检索（需仓库配置 knowledge:update 流水线，写入后约 1~2 分钟可检索）
-        hits = await memory.search("分区表 慢查询")
-        for hit in hits:
-            print(hit.score, hit.number, hit.title)
-
-        # 关键词标题检索（与语义检索并列，仅匹配 title，无需知识库；
-        # title 含确切关键词时更精准）
-        issues = await memory.keyword_search("pg_partman", limit=10)
-        for issue in issues:
-            print(issue.number, issue.title)
-
-
-asyncio.run(main())
+```bash
+export CNB_AGENTIC_MEMORY_TOKEN="<你的访问令牌>"
+export CNB_AGENTIC_MEMORY_REPO="<组织名>/<仓库名>"
 ```
 
-配置支持 `CNB_AGENTIC_MEMORY_` 前缀环境变量：`CNB_AGENTIC_MEMORY_TOKEN`、`CNB_AGENTIC_MEMORY_REPO`、`CNB_AGENTIC_MEMORY_BASE_URL`、`CNB_AGENTIC_MEMORY_TIMEOUT`（详见 [docs/API.md](docs/API.md)）。
+**Agent Skill 是本工具的首要使用方式**——安装 skill 后，智能体在对话中自动调用，无需手动执行任何命令：
+
+```bash
+# 安装 skill（任选一源）
+npx skills add https://cnb.cool/xqitw/cnb-agentic-memory.git
+npx skills add https://github.com/xqitw/cnb-agentic-memory.git
+```
+
+之后对智能体说一句话即可：
+
+```text
+用户：记住这个：我们的 CI 用 cnb 流水线，配置文件是 .cnb.yml
+智能体：（自动调用 skill 写入记忆，自动提炼 title 与标签）
+用户：上次我们的 CI 是怎么配的？
+智能体：（自动检索记忆，找回上面那条）
+```
+
+其他形态：希望手动操作可用 [CLI](docs/CLI.md)，集成到自建智能体可用 [MCP Server](docs/MCP.md) 或 [Python SDK](docs/API.md)，见下方使用形态。
 
 ## 使用形态
 
-| 形态 | 用法 | 文档 | 状态 |
-| --- | --- | --- | --- |
-| Python SDK | `from cnb_agentic_memory import CNBApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
-| CLI | `cnb-agentic-memory --help` | [docs/CLI.md](docs/CLI.md) | ✅ 已实现 |
-| MCP Server | `cnb-agentic-memory mcp` | [docs/MCP.md](docs/MCP.md) | ✅ 已实现 |
-| Agent Skill | `npx skills add ...` | [skills/cnb-agentic-memory](skills/cnb-agentic-memory/SKILL.md) | ✅ 已实现 |
+| 形态 | 入口 | 文档 |
+| --- | --- | --- |
+| Python SDK | `from cnb_agentic_memory import CNBApiClient, Memory` | [docs/API.md](docs/API.md)（配置、错误处理、语义层设计约定） |
+| CLI | `cnb-agentic-memory --help` | [docs/CLI.md](docs/CLI.md)（命令清单、错误处理） |
+| MCP Server | `cnb-agentic-memory mcp`（需 `[mcp]` extra） | [docs/MCP.md](docs/MCP.md)（客户端接入配置、智能体使用指导） |
+| Agent Skill | `npx skills add https://cnb.cool/xqitw/cnb-agentic-memory.git` 或 GitHub 源 `https://github.com/xqitw/cnb-agentic-memory.git` | [skills/cnb-agentic-memory/SKILL.md](skills/cnb-agentic-memory/SKILL.md) |
 
-## 文档
+## 贡献
 
-- [SDK API 参考](docs/API.md) — 配置、错误处理、记忆语义层设计约定、记忆仓库前置条件
-- [CLI 参考](docs/CLI.md) — 命令清单、配置、错误处理
-- [MCP Server 参考](docs/MCP.md) — 接入配置、工具清单、智能体使用指导
-- [Agent Skill](skills/cnb-agentic-memory/SKILL.md) — 智能体记忆系统使用技能
-
-## 开发
-
-```bash
-uv sync --extra dev                    # 安装依赖
-uv run ruff check src/ tests/          # 代码风格
-uv run ruff format --check src/ tests/ # 格式
-uv run mypy src tests                  # 类型检查
-uv run pytest -v                       # 单元测试（respx mock，不依赖网络）
-npx markdownlint-cli2 '**/*.md'        # 文档校验
-```
-
-提交信息使用中文 Conventional Commits 风格（feat/fix/docs/refactor/test/chore），开发在短生命周期分支，main 通过 PR 合并。参见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+欢迎参与贡献！开发环境搭建、分支与提交流程请参考 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ## License
 
-[MIT](LICENSE)
+[MIT](./LICENSE)
