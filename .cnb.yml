@@ -1,4 +1,4 @@
-# CI:测试 + 类型检查 + 发布到公网 PyPI + code-wiki + git release
+# CI:测试 + 类型检查 + 发布到公网 PyPI + code-wiki + git release + 同步 GitHub 镜像
 # 结构对齐 xqitw/journapi:
 #   - main 分支 PR:跑测试(ruff + mypy + pytest + markdownlint)
 #   - 打 tag (v*):测试 -> 构建发布 PyPI -> code-wiki -> git release
@@ -55,6 +55,19 @@ main:
   pull_request:
     - <<: *test-base
       stages: *test-stages
+  # 推送到 main:同步至 GitHub(镜像),密钥来自 xqitw/api-key 的 env-github.yml
+  push:
+    - stages:
+        - name: sync to github
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/xqitw/cnb-agentic-memory.git
+            auth_type: https
+            username: \${GIT_USERNAME}
+            password: \${GIT_ACCESS_TOKEN}
+            branch: main
+            push_tags: true
+            force: true
 
 $:
   # 云原生开发环境
@@ -74,7 +87,18 @@ $:
       stages:
         - name: vscode go
           type: vscode:go
-  # 打 tag (v*):测试 + 发 PyPI + code-wiki + git release
+  # 打 tag (v*):测试 + 发 PyPI + code-wiki + git release + 同步至 GitHub
   tag_push:
     - <<: *pypi-publish
     - !reference [.code-wiki-pipeline]
+    - stages:
+        - name: sync to github
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/xqitw/cnb-agentic-memory.git
+            auth_type: https
+            username: \${GIT_USERNAME}
+            password: \${GIT_ACCESS_TOKEN}
+            branch: main
+            push_tags: true
+            force: true
