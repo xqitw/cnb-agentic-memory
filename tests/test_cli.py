@@ -14,6 +14,7 @@ from cnb_agentic_memory.cli import app
 runner = CliRunner()
 BASE = "https://api.cnb.cool"
 
+
 def issue_payload(number: int, title: str, body: str = "", state: str = "open") -> dict:
     return {
         "number": str(number),
@@ -24,6 +25,7 @@ def issue_payload(number: int, title: str, body: str = "", state: str = "open") 
         "comment_count": 0,
     }
 
+
 def echo_issue(number: int, state: str = "open"):
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
@@ -33,6 +35,7 @@ def echo_issue(number: int, state: str = "open"):
         )
 
     return handler
+
 
 def test_update_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """update 命令输出更新后的记忆 JSON。"""
@@ -49,6 +52,7 @@ def test_update_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert data["number"] == 9
     assert data["title"] == "新标题"
 
+
 def test_restore_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """restore 命令输出恢复后的状态。"""
 
@@ -61,6 +65,7 @@ def test_restore_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     data = json.loads(result.output)
     assert data["state"] == "open"
 
+
 def test_api_error_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     """API 错误透传 stderr 并以退出码 1 退出。"""
 
@@ -71,6 +76,7 @@ def test_api_error_exit(monkeypatch: pytest.MonkeyPatch) -> None:
         result = runner.invoke(app, ["list"])
     assert result.exit_code == 1
     assert "API 错误（404）" in result.output
+
 
 def test_unexpected_error_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     """未预期异常默认友好一行 + 退出码 70（DEBUG=1 时抛 traceback）。"""
@@ -83,6 +89,7 @@ def test_unexpected_error_exit(monkeypatch: pytest.MonkeyPatch) -> None:
         result = runner.invoke(app, ["list"])
     assert result.exit_code == 70
     assert "内部错误" in result.output
+
 
 def test_unexpected_error_debug_raises_traceback(monkeypatch: pytest.MonkeyPatch) -> None:
     """CNB_AGENTIC_MEMORY_DEBUG=1 时未预期异常抛完整 traceback（定位代码缺陷用）。"""
@@ -97,6 +104,7 @@ def test_unexpected_error_debug_raises_traceback(monkeypatch: pytest.MonkeyPatch
     assert result.exit_code != 70
     assert "内部错误" in result.output
 
+
 def test_version_flag_outputs_and_exits() -> None:
     """--version 输出版本号并退出。"""
     from cnb_agentic_memory import __version__
@@ -105,17 +113,20 @@ def test_version_flag_outputs_and_exits() -> None:
     assert result.exit_code == 0
     assert result.output.strip() == f"cnb-agentic-memory {__version__}"
 
+
 def test_no_args_shows_help() -> None:
     """无参数时显示 help 并退出（callback 内处理，不拦截 --version）。"""
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert "Usage:" in result.output
 
+
 def test_mcp_subcommand_registered() -> None:
     """mcp 子命令已注册（单入口模式：MCP Server 由 CLI 子命令提供）。"""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "mcp" in result.output
+
 
 def test_mcp_missing_extra_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     """未安装 [mcp] extra 时，mcp 子命令给出安装指引并以退出码 2 退出。"""
@@ -134,6 +145,7 @@ def test_mcp_missing_extra_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "缺少 MCP 依赖" in result.output
     assert 'pip install "cnb-agentic-memory[mcp]"' in result.output
 
+
 def test_help_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
@@ -150,6 +162,7 @@ def test_help_lists_commands() -> None:
         "keyword",
     ):
         assert cmd in result.output
+
 
 def test_write_outputs_json(
     monkeypatch: pytest.MonkeyPatch,
@@ -169,6 +182,7 @@ def test_write_outputs_json(
     data = json.loads(result.output)
     assert data["number"] == 9
     assert data["title"] == "测试标题"
+
 
 def test_get_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
@@ -195,6 +209,7 @@ def test_get_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert data["number"] == 7
     assert data["labels"] == ["x"]
 
+
 def test_api_error_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
@@ -207,6 +222,7 @@ def test_api_error_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 1
     assert "404" in result.output
 
+
 def test_missing_repo_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     """配置缺失：退出码 2 + 可操作的友好提示（评审反馈：令牌缺失须有提示）。"""
     monkeypatch.delenv("CNB_AGENTIC_MEMORY_REPO", raising=False)
@@ -217,6 +233,7 @@ def test_missing_repo_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "CNB_AGENTIC_MEMORY_TOKEN" in result.output
     assert "CNB_AGENTIC_MEMORY_REPO" in result.output
 
+
 def test_list_state_bogus_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """--state 仅支持 open/closed（CNB API 不支持 all），非法值前置拒绝。"""
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
@@ -226,6 +243,7 @@ def test_list_state_bogus_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code == 2
     assert "仅支持 open/closed" in result.output
+
 
 def test_write_split_outputs_all_parts(monkeypatch: pytest.MonkeyPatch) -> None:
     """超长拆分时 CLI 输出全部分片编号（评审：循迹不漏片）。"""
@@ -259,6 +277,7 @@ def test_write_split_outputs_all_parts(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(data["parts"]) > 1  # 确实拆分了
     assert data["parts"][0]["number"] == data["number"]  # 首片即主编号
 
+
 def test_list_limit_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     """--limit 超过 100 被 clamp 到 100（服务端分页上限）。"""
 
@@ -272,6 +291,7 @@ def test_list_limit_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     params = dict(route.calls.last.request.url.params)
     assert params["page_size"] == "100"
+
 
 def test_search_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
@@ -303,6 +323,7 @@ def test_search_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert data[0]["number"] == 11
     assert data[0]["score"] == pytest.approx(0.9)
 
+
 def test_list_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
@@ -314,6 +335,7 @@ def test_list_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == []
+
 
 def test_keyword_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """keyword 命令：透传 keyword 过滤，limit 钳制，默认仅查 open（复审：CLI 层直接用例）。"""
@@ -346,6 +368,7 @@ def test_keyword_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "labels" not in params  # 专用记忆仓库，无需标签过滤
     assert params["state"] == "open"  # 默认仅查 open
 
+
 def test_keyword_include_closed_queries_both_states(monkeypatch: pytest.MonkeyPatch) -> None:
     """--include-closed：open/closed 双查合并去重（与 SDK include_closed 语义一致）。"""
 
@@ -376,6 +399,7 @@ def test_keyword_include_closed_queries_both_states(monkeypatch: pytest.MonkeyPa
     data = json.loads(result.output)
     assert [i["number"] for i in data] == [7, 5]  # closed 更新在前（updated_at 降序）
     assert route.call_count == 2  # open + closed 各查一次
+
 
 def test_keyword_empty_query_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """空检索词前置拒绝（MemoryError → 退出码 1）。"""
