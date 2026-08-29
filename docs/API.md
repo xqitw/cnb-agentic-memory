@@ -16,7 +16,7 @@ async with CNBApiClient(token="...", repo="group/memory") as client:
 
 ## 配置
 
-配置优先级：**显式参数 > `CNB_AGENTIC_MEMORY_` 前缀环境变量 > 默认值**。环境变量由 `cnb_agentic_memory.config.Config.from_env()` 统一读取，SDK / CLI / MCP 各形态行为一致。
+配置优先级：**显式参数 > `CNB_AGENTIC_MEMORY_` 前缀环境变量 > 默认值**。环境变量在 `CNBApiClient` 构造时由 `api.env()` 读取（非法 `TIMEOUT` 回落默认值），SDK / CLI / MCP 各形态行为一致。
 
 | 环境变量 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ except ApiError as err:
 
 ## cnb_agentic_memory.api — CNB API 薄封装
 
-`CNBApiClient` 封装 9 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
+`CNBApiClient` 封装 8 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
 
 | 方法 | 端点 | 说明 |
 | --- | --- | --- |

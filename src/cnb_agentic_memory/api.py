@@ -1,7 +1,7 @@
 """CNB Open API 薄封装（httpx 异步客户端）。
 
 设计约定（均经实测确认）：
-- 仅封装 9 个端点，无重试/限流/Provider 抽象，错误原样抛给调用方（智能体自行决策重试）
+- 仅封装 8 个端点，无重试/限流/Provider 抽象，错误原样抛给调用方（智能体自行决策重试）
 - 非 2xx 抛 ApiError，响应体原样保留
 - 所有请求必须带 Accept: application/json，否则服务端返回 406（实测踩坑）
 - 配置优先级：显式参数 > CNB_AGENTIC_MEMORY_ 前缀环境变量 > 默认值
@@ -60,7 +60,7 @@ class ApiError(Exception):
 
 
 class CNBApiClient:
-    """CNB Open API 异步客户端（9 个端点的薄封装）。
+    """CNB Open API 异步客户端（8 个端点的薄封装）。
 
     用法::
 
