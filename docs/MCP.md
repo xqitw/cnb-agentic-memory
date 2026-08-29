@@ -73,12 +73,12 @@ pip install "cnb-agentic-memory[mcp]"
 
 ## 使用指导（写给调用智能体）
 
-- **写入时务必写好 title**：keyword 标题检索只匹配 title，它是主检索通道（知识库）故障时唯一的找回途径。好的 title 是「高区分度关键词的短语」，不是句子
+- **写入时务必写好 title**：keyword 标题检索只匹配 title，它是无需知识库的独立检索通道（`memory_keyword_search`）。好的 title 是「高区分度关键词的短语」，不是句子
 - **检索按需选路**：按内容模糊查找用 `memory_search`（语义召回 0.98+）；
   title 含确切关键词（技术名词/编号/命令）用 `memory_keyword_search` 更精准
 - **`memory_update` 的 content 是全量替换**：只想追加信息时用 `memory_append`
 - **`memory_delete` 是软删除**：可随时 `memory_restore` 恢复，不要害怕删错
-- **错误处理**：工具返回的错误文本携带 CNB 原始信息（状态码/原因），请据此自行决策重试、换参数或放弃；仓库未配置知识库流水线时 `memory_search` 会失败并提示降级
+- **错误处理**：工具返回的错误文本携带 CNB 原始信息（状态码/原因），请据此自行决策重试、换参数或放弃；仓库未配置知识库流水线时 `memory_search` 会失败，错误文本提示可改用 `memory_keyword_search`（标题检索，无需知识库）
 
 ## 记忆仓库前置条件
 

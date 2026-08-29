@@ -39,7 +39,18 @@ def echo_issue(number: int, state: str = "open"):
 def test_help_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("write", "get", "update", "append", "delete", "restore", "list", "recent", "search"):
+    for cmd in (
+        "write",
+        "get",
+        "update",
+        "append",
+        "delete",
+        "restore",
+        "list",
+        "recent",
+        "search",
+        "keyword",
+    ):
         assert cmd in result.output
 
 
@@ -222,3 +233,80 @@ def test_list_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == []
+
+
+def test_keyword_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """cam keyword：透传 keyword/labels 过滤，limit 钳制，默认仅查 open（复审：CLI 层直接用例）。"""
+    import respx
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    def issue(number: str, updated: str) -> dict:
+        return {
+            "number": number,
+            "title": f"cam: pg_partman {number}",
+            "body": "",
+            "state": "open",
+            "labels": [{"name": "tag/postgresql"}],
+            "updated_at": updated,
+        }
+
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get("/g/r/-/issues").respond(
+            200, json=[issue("3", "2026-01-03T00:00:00Z"), issue("1", "2026-01-01T00:00:00Z")]
+        )
+        result = runner.invoke(app, ["keyword", "pg_partman", "--limit", "500"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert [i["number"] for i in data] == [3, 1]  # updated_at 降序（number 由模型解析为 int）
+    params = dict(route.calls.last.request.url.params)
+    assert params["keyword"] == "pg_partman"
+    assert params["page_size"] == "100"  # limit 钳制到服务端分页上限
+    assert params["labels"] == "category/,tag/"  # 命名空间过滤透传（非 cam Issue 不混入）
+    assert params["state"] == "open"  # 默认仅查 open
+
+
+def test_keyword_include_closed_queries_both_states(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--include-closed：open/closed 双查合并去重（与 SDK include_closed 语义一致）。"""
+    import respx
+
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state = dict(request.url.params).get("state")
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "number": "5" if state == "open" else "7",
+                    "title": "cam: pg_partman",
+                    "body": "",
+                    "state": state,
+                    "labels": [{"name": "tag/x"}],
+                    "updated_at": "2026-01-05T00:00:00Z" if state == "open" else "2026-01-07T00:00:00Z",
+                }
+            ],
+        )
+
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get("/g/r/-/issues").mock(side_effect=handler)
+        result = runner.invoke(app, ["keyword", "pg_partman", "--include-closed"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert [i["number"] for i in data] == [7, 5]  # closed 更新在前（updated_at 降序）
+    assert route.call_count == 2  # open + closed 各查一次
+
+
+def test_keyword_empty_query_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """空检索词前置拒绝（MemoryError → 退出码 1）。"""
+    monkeypatch.setenv("CAM_TOKEN", "t")
+    monkeypatch.setenv("CAM_REPO", "g/r")
+
+    result = runner.invoke(app, ["keyword", "   "])
+
+    assert result.exit_code == 1
+    assert "检索词不能为空" in result.output
