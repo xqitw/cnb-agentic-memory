@@ -67,7 +67,7 @@ def validate_label(label: str) -> str | None:
     if label != label.strip():
         return "标签首尾不能包含空格"
     if not _LABEL_ALLOWED.fullmatch(label):
-        return "标签含不允许的字符（只允许汉字、字母、数字、.: - / \\ 、全角符号及中间空格）"
+        return "标签含不允许的字符（只允许汉字、字母、数字、_.: - / \\ 、全角符号及中间空格）"
     return None
 
 
@@ -364,6 +364,8 @@ class Memory:
         for index, result in enumerate(created):
             try:
                 issue = await self.client.get_issue(result.number)
+                # get_issue 走单条详情接口（实测回显完整正文，与 list 接口
+                # 不回显正文的结论区分，见 docs/ 实测记录），比对可靠
                 body_ok = issue.body == parts[index]
                 labels_ok = bool(issue.label_names)
                 state_desc = "正文完整" if body_ok else "正文与期望不一致"

@@ -27,7 +27,8 @@ mcp = MCPServer(
         "不要删除重建——memory_delete 是软删除，内容仍留在知识库向量中"
         "（include_closed 可召回），仅用于真正废弃。\n"
         "2. 写入失败若返回已落盘分片编号，按错误信息中的建议处理："
-        "update 补齐/修正，勿重复 write（会重复创建）。\n"
+        "update 补齐/修正，勿重复 write（会重复创建）。超长内容拆分为"
+        "多条时按返回的 parts 逐条处理，勿只处理首条。\n"
         "3. 刚写入的记忆需 1~2 分钟知识库同步才能被 memory_search 检索到，"
         "这是平台预期不是故障；精确确认用 memory_get。\n"
         "4. memory_list / memory_keyword_search 不回显正文（body 为 null），"
@@ -117,8 +118,9 @@ async def memory_get(number: int) -> str:
 @mcp.tool(
     description=(
         "更新记忆（修正/补齐已有记忆的首选方式，勿删除重建）：content 为"
-        "全量替换（非增量追加，追加用 memory_append，单条上限 30KB）；"
-        "title 规则同 memory_write；tags/category 为追加语义。"
+        "全量替换，单条上限 30KB（不支持自动拆分）；增量信息用"
+        " memory_append 追加。title 规则同 memory_write；tags/category"
+        " 为追加语义。"
     )
 )
 async def memory_update(

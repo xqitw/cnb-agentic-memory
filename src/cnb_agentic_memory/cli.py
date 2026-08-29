@@ -222,14 +222,14 @@ def list_cmd(
 def recent(
     limit: int = typer.Option(5, "--limit", "-l", help="返回条数上限（1~100）"),
 ) -> None:
-    """最近更新的记忆。"""
+    """最近更新的记忆（不回显正文，需全文用 get <编号>）。"""
     limit = max(1, min(limit, 100))
 
     def run(memory: Memory) -> Any:
         return memory.list_recent(limit=limit)
 
     issues = _execute(run)
-    _dump([_issue_out(i) for i in issues])
+    _dump([_issue_out(i, body_echo=False) for i in issues])
 
 
 @app.command()

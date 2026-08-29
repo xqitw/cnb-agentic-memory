@@ -17,16 +17,16 @@
 
 | 命令 | 说明 |
 | --- | --- |
-| `cnb-agentic-memory write CONTENT --title TITLE [--tag TAG]... [--category CATEGORY]` | 写入记忆（两步写入 + 回读校验，超长自动拆分） |
+| `cnb-agentic-memory write CONTENT --title TITLE [--tag TAG]... [--category CATEGORY]` | 写入记忆（两步写入 + 回读校验，超长自动拆分；--tag 单值内逗号拆分为多标签，标签限汉字/字母/数字/_.: - / \ /全角/中间空格，1~50 字符，写前预检） |
 | `cnb-agentic-memory get NUMBER` | 读取记忆原文 |
 | `cnb-agentic-memory update NUMBER [--content] [--title] [--tag]... [--category]` | 更新正文/标题/标签（标签为追加语义） |
 | `cnb-agentic-memory append NUMBER NOTE` | 追加更新记录（进知识库可被语义检索） |
-| `cnb-agentic-memory delete NUMBER` | 软删除记忆（可 restore 恢复） |
+| `cnb-agentic-memory delete NUMBER` | 软删除记忆（可 restore 恢复；仅默认检索隐藏，内容仍留知识库向量，真正废弃才用） |
 | `cnb-agentic-memory restore NUMBER` | 恢复软删除的记忆 |
-| `cnb-agentic-memory list [--category] [--tag]... [--state] [--limit]` | 按分类/标签过滤列表 |
-| `cnb-agentic-memory recent [--limit]` | 最近更新的记忆 |
+| `cnb-agentic-memory list [--category] [--tag]... [--state] [--limit]` | 按分类/标签过滤列表（不回显正文，需全文用 get） |
+| `cnb-agentic-memory recent [--limit]` | 最近更新的记忆（不回显正文，需全文用 get） |
 | `cnb-agentic-memory search QUERY [--top-k] [--include-closed]` | 语义检索（知识库召回 + 元信息回读，按内容模糊查找；与 `cnb-agentic-memory keyword` 并列） |
-| `cnb-agentic-memory keyword QUERY [--limit] [--include-closed]` | 关键词标题检索（仅匹配标题，无需知识库；title 含确切关键词时更精准） |
+| `cnb-agentic-memory keyword QUERY [--limit] [--include-closed]` | 关键词标题检索（仅匹配标题，不回显正文需全文用 get；无需知识库；title 含确切关键词时更精准） |
 | `cnb-agentic-memory --version` | 显示版本号并退出 |
 | `cnb-agentic-memory mcp` | 启动 MCP Server（stdio；需安装 mcp extra） |
 
