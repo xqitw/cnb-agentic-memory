@@ -96,6 +96,7 @@ except ApiError as err:
 - **软删除**：无硬删除接口（CNB DELETE 返回 404），`delete` 后可 `restore`
 - **标签约定**：`category` 自动补 `category:` 前缀（对齐 CNB 平台分类约定，选择器中单选），`tags` 为普通标签原样保留；记忆仓库须为专用仓库（全部 Issue 均为记忆）
 - **检索分层**：语义检索走知识库向量召回（相关度受语料规模、查询内容与切分策略影响，PoC 实测样例中可达 0.98+）；`keyword_search` 是与它并列的第二检索方法（标题检索，无需知识库），供 title 含确切关键词时精准直达
+- **分页参数钳制**：limit / top_k 统一钳制到 1~100（CNB 服务端分页上限），SDK 与 CLI / MCP 入口层口径一致
 
 ## cnb_agentic_memory.models — 数据模型
 
