@@ -58,8 +58,7 @@ def test_normalize_title_keeps_caller_title() -> None:
 
 def test_normalize_title_truncates_to_limit() -> None:
     title = normalize_title("超" * 200, "正文")
-    assert len(title) <= 60
-    assert title
+    assert title == "超" * 60  # 精确截断到 MAX_TITLE_CHARS
 
 
 def test_normalize_title_falls_back_to_first_line() -> None:
@@ -152,7 +151,9 @@ async def test_write_splits_long_content(client: CNBApiClient, monkeypatch: pyte
 
     assert counter["n"] > 1  # 被拆成多条
     assert result.title.endswith(f"(1/{counter['n']})")
-    assert all(title.startswith("") for title in created.values())
+    assert all(
+        title and title.endswith(f"({i}/{counter['n']})") for i, title in created.items()
+    )  # 每个分片 title 非空且带各自的 (i/n) 序号后缀
     assert all(len(t) <= 60 for t in created.values())  # title 含序号后缀仍不超上限
 
 
@@ -476,15 +477,15 @@ async def test_list_with_category_and_tags(client: CNBApiClient) -> None:
     assert params["page_size"] == "10"
 
 
-async def test_list_tags_prefix_idempotent(client: CNBApiClient) -> None:
-    """已带命名空间前缀的 tags 不重复加前缀。"""
+async def test_list_tags_deduped_and_trimmed(client: CNBApiClient) -> None:
+    """tags 为普通标签：strip 空白、过滤空值、按内容去重。"""
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/group/repo/-/issues").respond(200, json=[])
-        await memory.list(tags=["already", "bare"])
+        await memory.list(tags=["x", " x ", "x", "", "y"])
 
     params = dict(route.calls.last.request.url.params)
-    assert params["labels"] == "already,bare"
+    assert params["labels"] == "x,y"
 
 
 async def test_list_recent(client: CNBApiClient) -> None:

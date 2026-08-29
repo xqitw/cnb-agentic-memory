@@ -1,6 +1,6 @@
 # 安全策略
 
-cnb-agentic-memory (cam) 是基于 CNB 平台的智能体记忆工具，涉及 CNB API 凭据管理与智能体记忆读写。我们高度重视安全问题。
+cnb-agentic-memory 是基于 CNB 平台的智能体记忆工具，涉及 CNB API 凭据管理与智能体记忆读写。我们高度重视安全问题。
 
 ## 支持版本
 

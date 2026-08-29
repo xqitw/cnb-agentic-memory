@@ -22,6 +22,8 @@ cnb-agentic-memory-mcp
 
 ## 快速开始（SDK）
 
+> **前置条件**：记忆仓库须为**专用仓库**（仓库中全部 Issue 均为记忆，不与普通 Issue 混用）；语义检索还需在仓库配置知识库同步流水线，详见 [docs/API.md](docs/API.md#记忆仓库前置条件)。
+
 ```python
 import asyncio
 
