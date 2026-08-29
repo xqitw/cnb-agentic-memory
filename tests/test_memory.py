@@ -542,6 +542,17 @@ async def test_search_parses_number_and_filters_closed(client: CNBApiClient) -> 
     assert first.state == "open"
 
 
+async def test_search_top_k_clamped(client: CNBApiClient) -> None:
+    """search 的 top_k 同样钳制到 1~100（与 limit 口径一致）。"""
+    memory = Memory(client)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.get("/group/repo/-/knowledge/base/query").respond(200, json=[])
+        await memory.search("q", top_k=0)  # 下限：0 → 1
+        assert dict(route.calls.last.request.url.params)["top_k"] == "1"
+        await memory.search("q", top_k=999)  # 上限：999 → 100
+        assert dict(route.calls.last.request.url.params)["top_k"] == "100"
+
+
 async def test_search_include_closed(client: CNBApiClient) -> None:
     memory = Memory(client)
     kb_items = [

@@ -439,7 +439,9 @@ class Memory:
         - 单个命中回读失败（如已删除/网络异常）跳过该条，不中断整体检索
         """
         try:
-            chunks: _List[KbChunk] = await self.client.query_knowledge_base(query, top_k=top_k)
+            chunks: _List[KbChunk] = await self.client.query_knowledge_base(
+                query, top_k=clamp_page_size(top_k)
+            )
         except (ApiError, httpx.HTTPError) as err:
             reason = f"{type(err).__name__}: {err}"
             raise MemoryError(
