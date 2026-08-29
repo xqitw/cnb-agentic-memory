@@ -40,6 +40,17 @@ MAX_TITLE_CHARS = 60
 VERIFY_RETRIES = 3
 VERIFY_INTERVAL_SECONDS = 0.5
 
+# 分页大小边界（CNB 服务端分页上限 100/页，超出被服务端拒绝）
+MAX_PAGE_SIZE = 100
+
+
+def clamp_page_size(value: int) -> int:
+    """统一钳制分页参数：下限 1，上限服务端分页上限。
+
+    SDK 与 CLI / MCP 入口层的钳制口径一致（入口层钳制保留，双层防护不冲突）。
+    """
+    return max(1, min(value, MAX_PAGE_SIZE))
+
 
 @dataclass(frozen=True)
 class WriteResult:
@@ -374,12 +385,17 @@ class Memory:
         """按分类/标签过滤记忆列表（结构化过滤与语义检索解耦）。"""
         labels = self._normalize_labels(tags, category)
         return await self.client.list_issues(
-            state=state, labels=labels or None, order_by="-updated_at", page_size=limit
+            state=state,
+            labels=labels or None,
+            order_by="-updated_at",
+            page_size=clamp_page_size(limit),
         )
 
     async def list_recent(self, limit: int = 5) -> _List[Issue]:
         """最近更新的记忆（一次请求）。"""
-        return await self.client.list_issues(state=STATE_OPEN, order_by="-updated_at", page_size=limit)
+        return await self.client.list_issues(
+            state=STATE_OPEN, order_by="-updated_at", page_size=clamp_page_size(limit)
+        )
 
     async def keyword_search(
         self, query: str, *, limit: int = 20, include_closed: bool = False
@@ -402,7 +418,7 @@ class Memory:
                 state=state,
                 keyword=query,
                 order_by="-updated_at",
-                page_size=max(limit, 1),
+                page_size=clamp_page_size(limit),
             )
             for issue in issues:
                 seen.setdefault(issue.number, issue)

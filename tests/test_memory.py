@@ -465,6 +465,23 @@ async def test_restore_reopen(client: CNBApiClient) -> None:
 # ---- memory.list / search ----
 
 
+async def test_sdk_limit_clamped(client: CNBApiClient) -> None:
+    """SDK 层 limit 统一钳制到 1~100（与 CLI/MCP 入口层口径一致）。"""
+    memory = Memory(client)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.get(path__regex=r"/group/repo/-/issues").respond(200, json=[])
+        await memory.list(limit=0)  # 下限：0 → 1
+        assert dict(route.calls.last.request.url.params)["page_size"] == "1"
+        await memory.list(limit=999)  # 上限：999 → 服务端分页上限 100
+        assert dict(route.calls.last.request.url.params)["page_size"] == "100"
+        await memory.list_recent(limit=0)
+        assert dict(route.calls.last.request.url.params)["page_size"] == "1"
+        await memory.list_recent(limit=999)
+        assert dict(route.calls.last.request.url.params)["page_size"] == "100"
+        await memory.keyword_search("kw", limit=999)
+        assert dict(route.calls.last.request.url.params)["page_size"] == "100"
+
+
 async def test_list_with_category_and_tags(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
