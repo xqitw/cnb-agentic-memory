@@ -94,13 +94,28 @@ def test_unexpected_error_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "内部错误" in result.output
 
 
+def test_unexpected_error_debug_raises_traceback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CNB_AGENTIC_MEMORY_DEBUG=1 时未预期异常抛完整 traceback（定位代码缺陷用）。"""
+    import respx
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_DEBUG", "1")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues").mock(side_effect=TypeError("boom"))
+        result = runner.invoke(app, ["list"], catch_exceptions=True)
+    # DEBUG=1 时 raise 上抛原异常：不走退出码 70 的友好出口，退出码由异常类型决定
+    assert result.exit_code != 70
+    assert "内部错误" in result.output
+
+
 def test_version_flag_outputs_and_exits() -> None:
     """--version 输出版本号并退出。"""
     from cnb_agentic_memory import __version__
 
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert f"cnb-agentic-memory {__version__}" in result.output
+    assert result.output.strip() == f"cnb-agentic-memory {__version__}"
 
 
 def test_no_args_shows_help() -> None:
