@@ -90,7 +90,7 @@ class CreateCommentForm(_LenientModel):
 class KbChunk(_LenientModel):
     """知识库检索单条结果（GET /{-}/knowledge/base/query）。"""
 
-    score: float = Field(default=0.0, description="语义相关度得分（0~1，实测主通道 0.98+）")
+    score: float = Field(default=0.0, description="语义相关度得分（0~1）")
     chunk: str = Field(default="", description="命中切片原文（记忆标题/正文/追加记录片段）")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
