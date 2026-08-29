@@ -8,15 +8,6 @@
 include:
   - https://cnb.cool/xqitw/pipes/-/blob/main/tpl/include.yml
 
-# 复用片段:测试环境
-.test-base: &test-base
-  docker:
-    image: docker.cnb.cool/xqitw/docker/dev-base:latest
-  runner:
-    cpus: 2
-  env:
-    UV_CACHE_DIR: /root/.cache/uv
-
 # 复用片段:测试步骤
 .test-stages: &test-stages
   - name: 同步依赖
