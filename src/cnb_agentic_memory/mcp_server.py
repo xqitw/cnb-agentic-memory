@@ -213,7 +213,7 @@ async def memory_keyword_search(
 
 
 def main() -> None:
-    """MCP Server 入口（pyproject scripts 指向此处）。"""
+    """MCP Server 启动入口（由 CLI 子命令 cnb-agentic-memory mcp 调用）。"""
     mcp.run()
 
 
