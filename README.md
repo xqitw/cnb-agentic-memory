@@ -42,7 +42,7 @@ async def main() -> None:
             tags=["postgresql"],
             category="db",
         )
-        print(result.number, result.url)
+        print(result.number, result.title)
 
         # 语义检索（需仓库配置 knowledge:update 流水线，写入后约 1~2 分钟可检索）
         hits = await memory.search("分区表 慢查询")
