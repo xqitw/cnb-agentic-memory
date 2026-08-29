@@ -35,11 +35,11 @@ CLI 已发布到 PyPI（包名 `cnb-agentic-memory`）。三种方式按需选�
 
 ### 方式一：uvx 免安装直接调用（推荐）
 
-无需任何安装步骤，`uvx` 自动下载并运行：
+无需任何安装步骤，`uvx` 自动下载并运行（命令名与包名一致，可直接运行）：
 
 ```bash
-uvx --from cnb-agentic-memory cnb-agentic-memory --help
-uvx --from cnb-agentic-memory cnb-agentic-memory search "分区表"
+uvx cnb-agentic-memory --help
+uvx cnb-agentic-memory search "分区表"
 ```
 
 > 需要 uv 工具：`curl -LsSf https://astral.sh/uv/install.sh | sh` 或 `pip install uv`。
