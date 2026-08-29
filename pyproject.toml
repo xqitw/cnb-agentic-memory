@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cnb-agentic-memory"
-version = "1.0.0"
+version = "1.0.1"
 description = "CNB Agentic Memory 是基于 CNB 平台构建的通用记忆工具，把 CNB 的 issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,6 +33,9 @@ classifiers = [
 ]
 
 dependencies = [
+    # pydantic 在 __init__ -> api -> models 主导入链上被无条件使用，必须作为基础依赖
+    # 1.0.0 漏声明导致裸装（如 uvx 只装基础依赖）时 ImportError，v2 API（ConfigDict）下界为 2，v3 有破坏性风险
+    "pydantic>=2,<3",
     # httpx 0.x 有破坏性变更先例（0.28 移除 proxies 等），上界对齐 typer/mcp 的处理方式
     "httpx>=0.27,<1",
     # typer 0.x 有破坏性变更先例，上界对齐 mcp 的处理方式
