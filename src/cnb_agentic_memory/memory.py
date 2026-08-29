@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import httpx
@@ -87,6 +88,23 @@ def clamp_page_size(value: int) -> int:
     SDK 与 CLI / MCP 入口层的钳制口径一致（入口层钳制保留，双层防护不冲突）。
     """
     return max(1, min(value, MAX_PAGE_SIZE))
+
+
+def _updated_at_sort_key(issue: Issue) -> tuple[int, str]:
+    """keyword_search 合并去重后的时序排序键（#51）。
+
+    CNB 当前统一返回 UTC Z 后缀，但时区表示不能依赖（混入 +08:00 等
+    偏移时字符串比较会错序）：优先解析为 datetime（aware，跨时区可比），
+    解析失败回退 (0, 原字符串) 保持与旧语义兼容且不抛错。
+    """
+    raw = issue.updated_at or ""
+    if raw:
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return (1, f"{dt.timestamp():020.6f}")
+        except ValueError:
+            pass
+    return (0, raw)
 
 
 @dataclass(frozen=True)
@@ -541,7 +559,7 @@ class Memory:
             )
             for issue in issues:
                 seen.setdefault(issue.number, issue)
-        return sorted(seen.values(), key=lambda i: i.updated_at or "", reverse=True)[:limit]
+        return sorted(seen.values(), key=_updated_at_sort_key, reverse=True)[:limit]
 
     async def search(
         self,
