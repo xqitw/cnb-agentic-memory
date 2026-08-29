@@ -32,6 +32,38 @@ include:
   - name: markdownlint
     script: npx --yes markdownlint-cli2 '**/*.md'
 
+# 复用片段:多版本 Python 测试（3.11 / 3.12 / 3.13，与 classifiers 声明一致）
+# dev-base 内置 uv，用 --python 指定版本；首次运行 uv 会自动下载对应版本
+.python-311: &python-311
+  docker:
+    image: docker.cnb.cool/xqitw/docker/dev-base:latest
+  runner:
+    cpus: 2
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+    UV_PYTHON: 3.11
+  stages: *test-stages
+
+.python-312: &python-312
+  docker:
+    image: docker.cnb.cool/xqitw/docker/dev-base:latest
+  runner:
+    cpus: 2
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+    UV_PYTHON: 3.12
+  stages: *test-stages
+
+.python-313: &python-313
+  docker:
+    image: docker.cnb.cool/xqitw/docker/dev-base:latest
+  runner:
+    cpus: 2
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+    UV_PYTHON: 3.13
+  stages: *test-stages
+
 # 复用片段:同步代码至 GitHub 镜像仓库
 # 密钥来自 xqitw/api-key 的 env-github.yml(GIT_USERNAME / GIT_ACCESS_TOKEN),不落库
 .pipeline: &git-sync-pipeline
@@ -71,8 +103,9 @@ include:
 
 main:
   pull_request:
-    - <<: *test-base
-      stages: *test-stages
+    - <<: *python-311
+    - <<: *python-312
+    - <<: *python-313
   # 推送到 main:同步代码至 GitHub 镜像仓库
   push:
     - *git-sync-pipeline
