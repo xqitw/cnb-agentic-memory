@@ -1,4 +1,4 @@
-"""CNBApiClient 单元测试：respx mock，覆盖 9 个端点与错误路径。"""
+"""CNBApiClient 单元测试：respx mock，覆盖 8 个端点与错误路径。"""
 
 from __future__ import annotations
 
