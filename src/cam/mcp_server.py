@@ -14,12 +14,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from .api import CNBApiClient
 from .memory import Memory, MemoryError, SearchResult, WriteResult
 
-mcp = FastMCP("cam", instructions="CNB 智能体记忆工具：写入、检索、管理跨会话记忆")
+mcp = MCPServer("cam", instructions="CNB 智能体记忆工具：写入、检索、管理跨会话记忆")
 
 
 def _write_out(result: WriteResult) -> dict:
