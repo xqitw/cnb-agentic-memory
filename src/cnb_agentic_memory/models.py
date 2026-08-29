@@ -34,7 +34,9 @@ class Issue(_LenientModel):
     title: str = Field(default="", description="标题，由工具生成的关键词摘要")
     body: str = Field(default="", description="记忆正文（Markdown）")
     state: str = Field(default="open", description="生命周期状态：open=有效，closed=已软删除")
-    labels: list[Label] = Field(default_factory=list, description="标签列表（分类 category:db、普通标签 pgsql）")
+    labels: list[Label] = Field(
+        default_factory=list, description="标签列表（分类 category:db、普通标签 pgsql）"
+    )
     created_at: str | None = Field(default=None, description="写入时间（ISO 8601）")
     updated_at: str | None = Field(default=None, description="最近更新时间（ISO 8601）")
 
