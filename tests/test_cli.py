@@ -36,6 +36,80 @@ def echo_issue(number: int, state: str = "open"):
     return handler
 
 
+def test_update_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """update 命令输出更新后的记忆 JSON。"""
+    import respx
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.patch("/g/r/-/issues/9").respond(200, json=issue_payload(9, "新标题"))
+        mock.post("/g/r/-/issues/9/labels").respond(200, json=[])
+        mock.get("/g/r/-/issues/9").respond(200, json=issue_payload(9, "新标题"))
+        result = runner.invoke(app, ["update", "9", "--title", "新标题"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["number"] == 9
+    assert data["title"] == "新标题"
+
+
+def test_restore_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """restore 命令输出恢复后的状态。"""
+    import respx
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    with respx.mock(base_url=BASE) as mock:
+        mock.patch("/g/r/-/issues/9").respond(200, json=issue_payload(9, "t", state="open"))
+        result = runner.invoke(app, ["restore", "9"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["state"] == "open"
+
+
+def test_api_error_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """API 错误透传 stderr 并以退出码 1 退出。"""
+    import respx
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues").respond(404, json={"errcode": 404, "errmsg": "not found"})
+        result = runner.invoke(app, ["list"])
+    assert result.exit_code == 1
+    assert "API 错误（404）" in result.output
+
+
+def test_unexpected_error_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未预期异常默认友好一行 + 退出码 70（DEBUG=1 时抛 traceback）。"""
+    import respx
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_DEBUG", raising=False)
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues").mock(side_effect=TypeError("boom"))
+        result = runner.invoke(app, ["list"])
+    assert result.exit_code == 70
+    assert "内部错误" in result.output
+
+
+def test_version_flag_outputs_and_exits() -> None:
+    """--version 输出版本号并退出。"""
+    from cnb_agentic_memory import __version__
+
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert f"cnb-agentic-memory {__version__}" in result.output
+
+
+def test_no_args_shows_help() -> None:
+    """无参数时显示 help 并退出（callback 内处理，不拦截 --version）。"""
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "Usage:" in result.output
+
+
 def test_mcp_subcommand_registered() -> None:
     """mcp 子命令已注册（单入口模式：MCP Server 由 CLI 子命令提供）。"""
     result = runner.invoke(app, ["--help"])

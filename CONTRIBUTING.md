@@ -75,5 +75,6 @@ npx markdownlint-cli2 '**/*.md'
 ## 测试注意事项
 
 - 单元测试使用 `respx` mock CNB API 请求，不依赖真实网络
+- 测试覆盖率由 pytest-cov 强制检查（门槛 90%，低于阀值时 pytest 直接失败）
 - 集成测试（真实 CNB API）不进入 CI，本地手动验证
 - 集成测试需要 `CNB_AGENTIC_MEMORY_REPO` / `CNB_AGENTIC_MEMORY_TOKEN` 环境变量
