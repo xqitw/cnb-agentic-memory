@@ -4,7 +4,7 @@
 - 仅封装 9 个端点，无重试/限流/Provider 抽象，错误原样抛给调用方（智能体自行决策重试）
 - 非 2xx 抛 ApiError，响应体原样保留
 - 所有请求必须带 Accept: application/json，否则服务端返回 406（实测踩坑）
-- 配置优先级：显式参数 > CAM_ 前缀环境变量 > 默认值
+- 配置优先级：显式参数 > CNB_AGENTIC_MEMORY_ 前缀环境变量 > 默认值
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ DEFAULT_TIMEOUT = 30.0
 
 
 def env(name: str, default: str | None = None) -> str | None:
-    """读取 CAM_ 前缀环境变量（如 CAM_TOKEN / CAM_REPO）。"""
-    return os.environ.get(f"CAM_{name}", default)
+    """读取 CNB_AGENTIC_MEMORY_ 前缀环境变量（如 CNB_AGENTIC_MEMORY_TOKEN / CNB_AGENTIC_MEMORY_REPO）。"""
+    return os.environ.get(f"CNB_AGENTIC_MEMORY_{name}", default)
 
 
 def parse_timeout(value: str | None) -> float:
@@ -114,9 +114,9 @@ class CNBApiClient:
         """构造时前置校验配置完整性，给出可操作的提示（而非请求时才炸）。"""
         missing = []
         if not self.token:
-            missing.append("CAM_TOKEN（CNB API 令牌）")
+            missing.append("CNB_AGENTIC_MEMORY_TOKEN（CNB API 令牌）")
         if not self.repo:
-            missing.append("CAM_REPO（记忆仓库 slug，如 group/memory）")
+            missing.append("CNB_AGENTIC_MEMORY_REPO（记忆仓库 slug，如 group/memory）")
         if missing:
             raise ConfigError("缺少必需配置：" + "、".join(missing))
 

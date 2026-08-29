@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from cam.mcp_server import mcp
+from cnb_agentic_memory.mcp_server import mcp
 
 BASE = "https://api.cnb.cool"
 
@@ -62,9 +62,9 @@ def test_memory_write_returns_parts(monkeypatch: pytest.MonkeyPatch) -> None:
     """memory_write 工具返回 JSON，超长拆分时含全部分片（评审：循迹不漏片）。"""
     import asyncio
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_write")
     counter = {"n": 0}
@@ -95,8 +95,8 @@ def test_memory_get_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """memory_get 返回记忆 JSON。"""
     import asyncio
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
     with respx.mock(base_url=BASE) as mock:
@@ -104,10 +104,10 @@ def test_memory_get_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
             200,
             json={
                 "number": "7",
-                "title": "cam: t",
+                "title": "t",
                 "body": "正文",
                 "state": "open",
-                "labels": [{"name": "tag/x"}],
+                "labels": [{"name": "x"}],
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-01-01T00:00:00Z",
             },
@@ -116,15 +116,15 @@ def test_memory_get_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
     data = json.loads(result)
     assert data["number"] == 7
-    assert data["labels"] == ["tag/x"]
+    assert data["labels"] == ["x"]
 
 
 def test_memory_get_api_error_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """API 错误在工具函数内抛出（由 MCP 框架转为 isError 结果），不吞不包装。"""
     import asyncio
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
     with respx.mock(base_url=BASE) as mock:
@@ -137,8 +137,8 @@ def test_memory_write_partial_success_transparent(monkeypatch):
     """拆分部分成功：MemoryError 的循迹信息透传给智能体（评审 warning）。"""
     import asyncio
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_write")
     counter = {"n": 0}
@@ -154,7 +154,7 @@ def test_memory_write_partial_success_transparent(monkeypatch):
 
     def get_side_effect(request):
         number = int(request.url.path.rsplit("/", 1)[1])
-        return httpx.Response(200, json=issue_payload(number, titles.get(number, "cam: t")))
+        return httpx.Response(200, json=issue_payload(number, titles.get(number, "t")))
 
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.post("/g/r/-/issues").mock(side_effect=create_side_effect)
@@ -170,8 +170,8 @@ def test_memory_list_state_invalid_rejected(monkeypatch):
     """state 非法值前置拒绝（评审 warning：不再打到服务端吃 4xx）。"""
     import asyncio
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_list")
     result = asyncio.run(tool.fn(category=None, tags=None, state="all", limit=20))
@@ -184,18 +184,18 @@ def test_keyword_search_basic(monkeypatch):
     """关键词标题检索：两态合并去重、按 updated_at 降序。"""
     import asyncio
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_keyword_search")
 
     def issue(number, updated):
         return {
             "number": str(number),
-            "title": "cam: kw " + str(number),
+            "title": "kw " + str(number),
             "body": "",
             "state": "open",
-            "labels": [{"name": "tag/x"}],
+            "labels": [{"name": "x"}],
             "comment_count": 0,
             "updated_at": updated,
         }
@@ -226,8 +226,8 @@ def test_keyword_search_basic(monkeypatch):
 def test_keyword_search_rejects_empty(monkeypatch):
     import asyncio
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_keyword_search")
     with pytest.raises(Exception, match="检索词不能为空"):

@@ -1,6 +1,6 @@
 # MCP Server 参考
 
-`cam-mcp` 把记忆语义层注册为 MCP 工具，供任何 MCP 客户端（Claude Desktop、CNB AI 助手等）调用。业务逻辑（两步写入、回读校验、title 不变量、超长拆分、软删除）全部在 SDK 层，MCP 是纯适配层。
+`cnb-agentic-memory-mcp` 把记忆语义层注册为 MCP 工具，供任何 MCP 客户端（Claude Desktop、CNB AI 助手等）调用。业务逻辑（两步写入、回读校验、title 不变量、超长拆分、软删除）全部在 SDK 层，MCP 是纯适配层。
 
 ## 安装与配置
 
@@ -8,14 +8,14 @@
 pip install "cnb-agentic-memory[mcp]"
 ```
 
-配置走 `CAM_` 前缀环境变量（与 SDK/CLI 一致）：
+配置走 `CNB_AGENTIC_MEMORY_` 前缀环境变量（与 SDK/CLI 一致）：
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `CAM_TOKEN` | CNB API Token（需 `repo-issue:rw` + `repo-code:r`） |
-| `CAM_REPO` | 记忆仓库 slug，如 `group/memory` |
-| `CAM_BASE_URL` | API 地址，默认 `https://api.cnb.cool` |
-| `CAM_TIMEOUT` | 请求超时秒数，默认 30 |
+| `CNB_AGENTIC_MEMORY_TOKEN` | CNB API Token（需 `repo-issue:rw` + `repo-code:r`） |
+| `CNB_AGENTIC_MEMORY_REPO` | 记忆仓库 slug，如 `group/memory` |
+| `CNB_AGENTIC_MEMORY_BASE_URL` | API 地址，默认 `https://api.cnb.cool` |
+| `CNB_AGENTIC_MEMORY_TIMEOUT` | 请求超时秒数，默认 30 |
 
 ## 客户端接入
 
@@ -24,16 +24,16 @@ pip install "cnb-agentic-memory[mcp]"
 ```json
 {
   "mcpServers": {
-    "cam": {
+    "cnb-agentic-memory": {
       "command": "uvx",
       "args": [
         "--from",
         "cnb-agentic-memory[mcp]",
-        "cam-mcp"
+        "cnb-agentic-memory-mcp"
       ],
       "env": {
-        "CAM_TOKEN": "<token>",
-        "CAM_REPO": "group/memory"
+        "CNB_AGENTIC_MEMORY_TOKEN": "<token>",
+        "CNB_AGENTIC_MEMORY_REPO": "group/memory"
       }
     }
   }
@@ -45,11 +45,11 @@ pip install "cnb-agentic-memory[mcp]"
 ```json
 {
   "mcpServers": {
-    "cam": {
-      "command": "cam-mcp",
+    "cnb-agentic-memory": {
+      "command": "cnb-agentic-memory-mcp",
       "env": {
-        "CAM_TOKEN": "<token>",
-        "CAM_REPO": "group/memory"
+        "CNB_AGENTIC_MEMORY_TOKEN": "<token>",
+        "CNB_AGENTIC_MEMORY_REPO": "group/memory"
       }
     }
   }

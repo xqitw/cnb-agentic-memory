@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你对 cnb-agentic-memory (cam) 的关注！欢迎提交 Issue 和 Pull Request。
+感谢你对 cnb-agentic-memory 的关注！欢迎提交 Issue 和 Pull Request。
 
 ## 开发环境
 
@@ -65,7 +65,7 @@ npx markdownlint-cli2 '**/*.md'
 
 ### 目录约定
 
-- `src/cam/` — 核心（API 客户端 / 工具语义层 / MCP Server / CLI）
+- `src/cnb_agentic_memory/` — 核心（API 客户端 / 工具语义层 / MCP Server / CLI）
 
 ## 分支与发布
 

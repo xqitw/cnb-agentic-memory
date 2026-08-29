@@ -4,7 +4,7 @@
 
 ## 项目
 
-cnb-agentic-memory (cam) — 基于 CNB 平台的通用智能体记忆工具。以 CNB Issue 为存储、CNB 知识库为语义检索，以 MCP Server 形式对外提供服务。Python 3.11+，PyPI 包名 `cnb-agentic-memory`，CLI 命令 `cam`，MCP Server 入口 `cam-mcp`。
+cnb-agentic-memory — 基于 CNB 平台的通用智能体记忆工具。以 CNB Issue 为存储、CNB 知识库为语义检索，以 MCP Server 形式对外提供服务。Python 3.11+，PyPI 包名 `cnb-agentic-memory`，CLI 命令 `cnb-agentic-memory`，MCP Server 入口 `cnb-agentic-memory-mcp`。
 
 ## 目标
 
@@ -56,4 +56,4 @@ npx markdownlint-cli2 '**/*.md'   # Markdown 文档校验
 
 - 单元测试使用 respx mock CNB API 请求，不依赖真实网络
 - 集成测试（真实 CNB API）不进入 CI，本地手动验证
-- 集成测试需要 MEMORY_REPO / CNB_TOKEN 环境变量
+- 集成测试需要 CNB_AGENTIC_MEMORY_REPO / CNB_AGENTIC_MEMORY_TOKEN 环境变量

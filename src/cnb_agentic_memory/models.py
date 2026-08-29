@@ -1,6 +1,6 @@
-"""CNB API 数据模型（自建，只建 cam 消费的字段）。
+"""CNB API 数据模型（自建，只建本项目消费的字段）。
 
-建模原则：cam 是记忆系统，不是通用 Issue 客户端——字段以"是否参与记忆的
+建模原则：本项目是记忆系统，不是通用 Issue 客户端——字段以"是否参与记忆的
 生命周期或检索语义"为准入，CNB 的展示层字段（优先级/颜色/计数等）一律不收。
 策略：extra="ignore" 宽容未知字段——上游加字段不炸。
 
@@ -24,14 +24,14 @@ class _CamModel(BaseModel):
 class Label(_CamModel):
     """Issue 标签（分类与标签命名空间约定的载体）。"""
 
-    name: str = Field(default="", description="标签名，如 category/db、tag/x")
+    name: str = Field(default="", description="标签名，如 category:db、pgsql")
 
 
 class Issue(_CamModel):
     """记忆（一记忆 = 一 Issue，number 是记忆唯一标识）。"""
 
     number: int = Field(description="记忆唯一标识（仓库内自增 Issue 编号）")
-    title: str = Field(default="", description="标题，由工具生成的关键词摘要（cam: 前缀）")
+    title: str = Field(default="", description="标题，由工具生成的关键词摘要")
     body: str = Field(default="", description="记忆正文（Markdown）")
     state: str = Field(default="open", description="生命周期状态：open=有效，closed=已软删除")
     labels: list[Label] = Field(default_factory=list, description="标签列表（分类与命名空间约定）")
@@ -40,7 +40,7 @@ class Issue(_CamModel):
 
     @property
     def label_names(self) -> list[str]:
-        """标签名列表（如 ["category/xxx", "tag/yyy"]）。"""
+        """标签名列表（如 ["category:db", "pgsql"]）。"""
         return [lb.name for lb in self.labels]
 
 

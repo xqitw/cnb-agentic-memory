@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from cam import ApiError, CNBApiClient, Memory, MemoryError, normalize_title
+from cnb_agentic_memory import ApiError, CNBApiClient, Memory, MemoryError, normalize_title
 
 BASE = "https://api.cnb.cool"
 
@@ -51,44 +51,44 @@ def echo_issue(number: int, state: str = "open") -> Callable[[httpx.Request], ht
 
 
 def test_normalize_title_keeps_caller_title() -> None:
-    """调用方撰写的 title 原样保留（仅加前缀）。"""
+    """调用方撰写的 title 原样保留（仅截断到上限）。"""
     title = normalize_title("PostgreSQL 分区表 pg_partman", "正文")
-    assert title == "cam: PostgreSQL 分区表 pg_partman"
+    assert title == "PostgreSQL 分区表 pg_partman"
 
 
 def test_normalize_title_truncates_to_limit() -> None:
     title = normalize_title("超" * 200, "正文")
     assert len(title) <= 60
-    assert title.startswith("cam: ")
+    assert title
 
 
 def test_normalize_title_falls_back_to_first_line() -> None:
     """未提供 title 时兜底为正文首个非空行（去 Markdown 标题符）。"""
     title = normalize_title(None, "# 标题行\n\n正文内容")
-    assert title == "cam: 标题行"
+    assert title == "标题行"
 
 
 def test_normalize_title_blank_content_fallback() -> None:
     """无有效行时使用 untitled memory 兜底；纯符号行如实保留（不做语义判断）。"""
-    assert normalize_title(None, "") == "cam: untitled memory"
-    assert normalize_title(None, "!!!") == "cam: !!!"
+    assert normalize_title(None, "") == "untitled memory"
+    assert normalize_title(None, "!!!") == "!!!"
 
 
 # ---- memory.write：两步写入 + 回读校验 ----
 
 
 async def test_write_two_steps_and_verify(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         create = mock.post("/group/repo/-/issues").mock(side_effect=echo_issue(9))
-        labels = mock.post("/group/repo/-/issues/9/labels").respond(200, json=[{"id": "1", "name": "tag/x"}])
-        verify = mock.get("/group/repo/-/issues/9").respond(200, json=issue_payload(9, "cam: 内容"))
+        labels = mock.post("/group/repo/-/issues/9/labels").respond(200, json=[{"id": "1", "name": "x"}])
+        verify = mock.get("/group/repo/-/issues/9").respond(200, json=issue_payload(9, "内容"))
         result = await memory.write("内容", tags=["x"], category="db")
 
     assert create.called and labels.called and verify.called
     assert result.number == 9
-    assert result.title == "cam: 内容"
+    assert result.title == "内容"
     assert result.url == "https://cnb.cool/group/repo/-/issues/9"
 
 
@@ -96,12 +96,12 @@ async def test_write_creates_issue_without_labels_payload(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """创建请求体不应携带 labels（新标签会被服务端静默丢弃，类型层已锁死）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/group/repo/-/issues").mock(side_effect=echo_issue(1))
         mock.post("/group/repo/-/issues/1/labels").respond(200, json=[])
-        mock.get("/group/repo/-/issues/1").respond(200, json=issue_payload(1, "cam: 内容"))
+        mock.get("/group/repo/-/issues/1").respond(200, json=issue_payload(1, "内容"))
         await memory.write("内容", tags=["新标签"])
 
     payload = json.loads(route.calls.last.request.content)
@@ -116,7 +116,7 @@ async def test_write_rejects_empty_content(client: CNBApiClient) -> None:
 
 async def test_write_verify_failure_raises(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """创建返回 201 但回读不一致 → 报写路径校验失败（静默失败形态）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.post("/group/repo/-/issues").mock(side_effect=echo_issue(3))
@@ -128,7 +128,7 @@ async def test_write_verify_failure_raises(client: CNBApiClient, monkeypatch: py
 
 
 async def test_write_splits_long_content(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = ("段落。\n\n" + "x" * 20000) * 3
     created: dict[int, str] = {}
@@ -152,13 +152,13 @@ async def test_write_splits_long_content(client: CNBApiClient, monkeypatch: pyte
 
     assert counter["n"] > 1  # 被拆成多条
     assert result.title.endswith(f"(1/{counter['n']})")
-    assert all(title.startswith("cam: ") for title in created.values())
+    assert all(title.startswith("") for title in created.values())
     assert all(len(t) <= 60 for t in created.values())  # title 含序号后缀仍不超上限
 
 
 async def test_write_splits_single_long_line(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """无空行的超长单行（代码块/长文本）也能被按行拆分（评审意见：保底按行）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = "line\n" * 12000  # 无空行、约 60KB
     counter = {"n": 0}
@@ -190,7 +190,7 @@ async def test_write_splits_no_newline_hard_cut(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """不含任何换行的连续串（长 URL/base64 等）按 UTF-8 字符边界硬切。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = "x" * 60000  # 无换行、无空行
     counter = {"n": 0}
@@ -221,7 +221,7 @@ async def test_write_splits_no_newline_hard_cut(
 
 def test_split_hard_cut_utf8_boundary() -> None:
     """中文连续串硬切不产生半个字符（每片仍是合法 UTF-8）。"""
-    from cam.memory import _split_body
+    from cnb_agentic_memory.memory import _split_body
 
     parts = _split_body("汉" * 20000)  # 每字 3 字节，总 60KB
     assert len(parts) > 1
@@ -231,7 +231,7 @@ def test_split_hard_cut_utf8_boundary() -> None:
 
 def test_split_lossless_with_blank_lines() -> None:
     """含空行分隔的内容拆分无损（评审 critical：分隔符不得被吞）。"""
-    from cam.memory import _split_body
+    from cnb_agentic_memory.memory import _split_body
 
     content = "a" * 29990 + "\n\n" + "b" * 20
     parts = _split_body(content)
@@ -243,7 +243,7 @@ def test_split_fuzz_lossless() -> None:
     """随机混合正文 fuzz：段长跨过三级拆分阈值（含硬切），恒强无损恒有界。"""
     import random
 
-    from cam.memory import _split_body
+    from cnb_agentic_memory.memory import _split_body
 
     rng = random.Random(42)
     split_count = 0
@@ -287,7 +287,7 @@ async def test_search_network_error_suggests_fallback(client: CNBApiClient) -> N
 
 def test_title_suffix_fits_limit_for_large_split_count() -> None:
     """分片数 >= 1000 时 (i/n) 后缀仍不破 60 字符上限（评审建议的回归守卫）。"""
-    from cam.memory import MAX_TITLE_CHARS, normalize_title
+    from cnb_agentic_memory.memory import MAX_TITLE_CHARS, normalize_title
 
     for n in (999, 1000, 12345):
         base = normalize_title("超" * 200, "正文")
@@ -299,7 +299,7 @@ async def test_write_single_label_failure_reports_number(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """主路径（单条）创建成功但补标签失败：MemoryError 携带已落盘编号（评审意见：与拆分路径标准一致）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.post("/group/repo/-/issues").mock(side_effect=echo_issue(40))
@@ -314,7 +314,7 @@ async def test_write_partial_failure_reports_created(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """多分片写入中途失败：MemoryError 携带已创建分片编号（评审意见：孤儿 Issue 可循迹）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = ("段落。\n\n" + "x" * 20000) * 3
     counter = {"n": 0}
@@ -338,7 +338,7 @@ async def test_write_category_prefix_idempotent(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """category 已带前缀不重复加；空 tag 被过滤（评审意见：防静默错误标签）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     captured: dict[str, object] = {}
 
@@ -350,17 +350,17 @@ async def test_write_category_prefix_idempotent(
             return httpx.Response(200, json=[])
 
         mock.post("/group/repo/-/issues/30/labels").mock(side_effect=label_side_effect)
-        mock.get("/group/repo/-/issues/30").respond(200, json=issue_payload(30, "cam: t"))
-        await memory.write("内容", title="t", tags=["", "  ", "tag/ok", "x"], category="category/db")
+        mock.get("/group/repo/-/issues/30").respond(200, json=issue_payload(30, "t"))
+        await memory.write("内容", title="t", tags=["", "  ", "ok", "x"], category="category:db")
 
-    assert captured["labels"] == ["category/db", "tag/ok", "tag/x"]
+    assert captured["labels"] == ["category:db", "ok", "x"]
 
 
 # ---- memory.update / append / delete ----
 
 
 async def test_update_body_and_verify(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
@@ -393,25 +393,25 @@ async def test_update_nothing_raises(client: CNBApiClient) -> None:
 
 async def test_update_title_verified(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """title 变更同样回读校验（评审意见：与 write 路径标准一致）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
-        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "cam: 新标题"))
+        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "新标题"))
         await memory.update(5, title="新标题")
 
     payload = json.loads(patch.calls.last.request.content)
-    assert payload["title"] == "cam: 新标题"
+    assert payload["title"] == "新标题"
 
 
 async def test_update_title_and_tags_same_call(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """title/content 与 tags 同次调用都生效（评审意见：分支不再吞标签更新）。"""
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
         labels = mock.post("/group/repo/-/issues/5/labels").respond(200, json=[])
-        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "cam: 新标题"))
+        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "新标题"))
         await memory.update(5, title="新标题", tags=["x"])
 
     assert patch.called and labels.called
@@ -472,7 +472,7 @@ async def test_list_with_category_and_tags(client: CNBApiClient) -> None:
         await memory.list(category="db", tags=["x"], limit=10)
 
     params = dict(route.calls.last.request.url.params)
-    assert params["labels"] == "category/db,tag/x"
+    assert params["labels"] == "category:db,x"
     assert params["page_size"] == "10"
 
 
@@ -481,10 +481,10 @@ async def test_list_tags_prefix_idempotent(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/group/repo/-/issues").respond(200, json=[])
-        await memory.list(tags=["tag/already", "bare"])
+        await memory.list(tags=["already", "bare"])
 
     params = dict(route.calls.last.request.url.params)
-    assert params["labels"] == "tag/already,tag/bare"
+    assert params["labels"] == "already,bare"
 
 
 async def test_list_recent(client: CNBApiClient) -> None:

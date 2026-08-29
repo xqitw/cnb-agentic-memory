@@ -1,10 +1,10 @@
-# CNB Agentic Memory (CAM)
+# CNB Agentic Memory
 
 基于 [CNB](https://cnb.cool) 平台的通用智能体记忆工具：以 Issue 为存储、知识库为语义检索，把 CNB 的 Issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。
 
 - **一记忆 = 一 Issue**：Issue `number` 是记忆唯一标识，免自定义 id / 免并发仲裁
 - **零 git 依赖**：全部走 CNB Open API，无 git 二进制 / 无本地 clone
-- **多形态**：SDK（Python）→ CLI（`cam`）→ MCP Server（`cam-mcp`）→ Agent Skill，按需取用
+- **多形态**：SDK（Python）→ CLI（`cnb-agentic-memory`）→ MCP Server（`cnb-agentic-memory-mcp`）→ Agent Skill，按需取用
 - **实测背书**：语义召回 0.98+、两步写入、写后回读校验等架构红线全部来自 PoC 实测
 
 ## 安装
@@ -17,7 +17,7 @@ uv add "cnb-agentic-memory[mcp]"       # 含 MCP Server
 pip install "cnb-agentic-memory[mcp]"
 
 # MCP Server 启动（stdio，接入 Claude Desktop / CNB AI 助手等 MCP 客户端；需 [mcp] extra）
-cam-mcp
+cnb-agentic-memory-mcp
 ```
 
 ## 快速开始（SDK）
@@ -25,7 +25,7 @@ cam-mcp
 ```python
 import asyncio
 
-from cam import CNBApiClient, Memory
+from cnb_agentic_memory import CNBApiClient, Memory
 
 
 async def main() -> None:
@@ -57,23 +57,23 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-配置支持 `CAM_` 前缀环境变量：`CAM_TOKEN`、`CAM_REPO`、`CAM_BASE_URL`、`CAM_TIMEOUT`（详见 [docs/API.md](docs/API.md)）。
+配置支持 `CNB_AGENTIC_MEMORY_` 前缀环境变量：`CNB_AGENTIC_MEMORY_TOKEN`、`CNB_AGENTIC_MEMORY_REPO`、`CNB_AGENTIC_MEMORY_BASE_URL`、`CNB_AGENTIC_MEMORY_TIMEOUT`（详见 [docs/API.md](docs/API.md)）。
 
 ## 使用形态
 
 | 形态 | 用法 | 文档 | 状态 |
 | --- | --- | --- | --- |
-| Python SDK | `from cam import CNBApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
-| CLI | `cam --help` | [docs/CLI.md](docs/CLI.md) | ✅ 已实现 |
-| MCP Server | `cam-mcp` | [docs/MCP.md](docs/MCP.md) | ✅ 已实现 |
-| Agent Skill | `npx skills add ...` | [skills/cam-skill](skills/cam-skill/SKILL.md) | ✅ 已实现 |
+| Python SDK | `from cnb_agentic_memory import CNBApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
+| CLI | `cnb-agentic-memory --help` | [docs/CLI.md](docs/CLI.md) | ✅ 已实现 |
+| MCP Server | `cnb-agentic-memory-mcp` | [docs/MCP.md](docs/MCP.md) | ✅ 已实现 |
+| Agent Skill | `npx skills add ...` | [skills/cnb-agentic-memory](skills/cnb-agentic-memory/SKILL.md) | ✅ 已实现 |
 
 ## 文档
 
 - [SDK API 参考](docs/API.md) — 配置、错误处理、记忆语义层设计约定、记忆仓库前置条件
 - [CLI 参考](docs/CLI.md) — 命令清单、配置、错误处理
 - [MCP Server 参考](docs/MCP.md) — 接入配置、工具清单、智能体使用指导
-- [Agent Skill](skills/cam-skill/SKILL.md) — 智能体记忆系统使用技能
+- [Agent Skill](skills/cnb-agentic-memory/SKILL.md) — 智能体记忆系统使用技能
 
 ## 开发
 

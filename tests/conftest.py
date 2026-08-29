@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from cam import CNBApiClient
+from cnb_agentic_memory import CNBApiClient
 
 
 @pytest.fixture

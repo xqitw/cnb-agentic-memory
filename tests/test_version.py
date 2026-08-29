@@ -1,6 +1,6 @@
 from importlib.metadata import version
 
-from cam import __version__
+from cnb_agentic_memory import __version__
 
 
 def test_version() -> None:

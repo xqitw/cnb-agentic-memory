@@ -1,9 +1,9 @@
-"""cam 命令行入口：薄封装 Memory 语义层。
+"""cnb-agentic-memory 命令行入口：薄封装 Memory 语义层。
 
 设计约定：
 - 输出 JSON（--json 或默认）便于智能体消费，人类可读格式仅 list/search 展示用
 - 错误透传：ApiError/MemoryError 输出到 stderr 并以非零码退出，不包装语义
-- 配置统一走 CAM_ 环境变量（与 SDK/MCP 一致），命令行参数可覆盖
+- 配置统一走 CNB_AGENTIC_MEMORY_ 环境变量（与 SDK/MCP 一致），命令行参数可覆盖
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from .api import ApiError, CNBApiClient, ConfigError, env
 from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryError
 
 app = typer.Typer(
-    name="cam",
+    name="cnb-agentic-memory",
     help="CNB Agentic Memory：基于 CNB 平台的通用智能体记忆工具",
     no_args_is_help=True,
     add_completion=False,
@@ -54,11 +54,11 @@ def _execute(coro_factory: Any) -> Any:
         typer.echo("请检查网络连接后重试", err=True)
         raise typer.Exit(1) from err
     except Exception as err:
-        # 未预期异常：默认友好一行；CAM_DEBUG=1 时抛出完整 traceback 定位代码缺陷
+        # 未预期异常：默认友好一行；CNB_AGENTIC_MEMORY_DEBUG=1 时抛出完整 traceback 定位代码缺陷
         typer.echo(f"内部错误：{type(err).__name__}: {err}", err=True)
         if env("DEBUG"):
             raise
-        typer.echo("如需查看完整堆栈，请设置 CAM_DEBUG=1 后重试", err=True)
+        typer.echo("如需查看完整堆栈，请设置 CNB_AGENTIC_MEMORY_DEBUG=1 后重试", err=True)
         raise typer.Exit(70) from err
 
 
@@ -89,8 +89,8 @@ def write(
         "-t",
         help="标题：提炼高区分度关键词短语（keyword 检索只匹配标题）；不传则兜底为正文首行截取",
     ),
-    tag: list[str] = typer.Option(None, "--tag", help="标签，可多次传入（自动补 tag/ 前缀）"),
-    category: str = typer.Option(None, "--category", "-c", help="分类（自动补 category/ 前缀）"),
+    tag: list[str] = typer.Option(None, "--tag", help="标签，可多次传入"),
+    category: str = typer.Option(None, "--category", "-c", help="分类（自动补 category: 前缀）"),
 ) -> None:
     """写入一条记忆（两步写入 + 回读校验；超长自动拆分）。"""
 
@@ -212,7 +212,7 @@ def search(
     top_k: int = typer.Option(5, "--top-k", "-k", help="返回条数上限（1~100）"),
     include_closed: bool = typer.Option(False, "--include-closed", help="包含已软删除的记忆"),
 ) -> None:
-    """语义检索（知识库向量召回，按内容模糊查找；与 cam keyword 并列）。"""
+    """语义检索（知识库向量召回，按内容模糊查找；与 keyword 命令并列）。"""
     top_k = max(1, min(top_k, 100))
 
     def run(memory: Memory) -> Any:
@@ -240,7 +240,7 @@ def keyword(
     limit: int = typer.Option(20, "--limit", "-l", help="返回条数上限（1~100）"),
     include_closed: bool = typer.Option(False, "--include-closed", help="包含已软删除的记忆"),
 ) -> None:
-    """关键词标题检索（与语义检索 cam search 并列，按需选择）。"""
+    """关键词标题检索（与语义检索 search 命令并列，按需选择）。"""
     limit = max(1, min(limit, 100))
 
     def run(memory: Memory) -> Any:
