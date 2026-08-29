@@ -23,7 +23,7 @@ include:
   - name: markdownlint
     script: npx --yes markdownlint-cli2 '**/*.md'
 
-# 复用片段:多版本 Python 测试（3.11 / 3.12 / 3.13，与 classifiers 声明一致）
+# 复用片段:多版本 Python 测试（3.11-3.14，与 classifiers 声明一致）
 # dev-base 内置 uv，用 UV_PYTHON 环境变量指定版本（uv 会按需自动下载对应 Python）
 .python-env-base: &python-env-base
   docker:
@@ -52,6 +52,13 @@ include:
   env:
     UV_CACHE_DIR: /root/.cache/uv
     UV_PYTHON: "3.13"
+  stages: *test-stages
+
+.python-314: &python-314
+  <<: *python-env-base
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+    UV_PYTHON: "3.14"
   stages: *test-stages
 
 # 复用片段:同步代码至 GitHub 镜像仓库
@@ -96,6 +103,7 @@ main:
     - <<: *python-311
     - <<: *python-312
     - <<: *python-313
+    - <<: *python-314
   # 推送到 main:同步代码至 GitHub 镜像仓库
   push:
     - *git-sync-pipeline
