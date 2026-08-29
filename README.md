@@ -1,5 +1,14 @@
 # CNB Agentic Memory
 
+[![Latest Release](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/release)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/release.link)
+[![PyPI](https://img.shields.io/pypi/v/cnb-agentic-memory.svg)](https://pypi.org/project/cnb-agentic-memory/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://www.python.org)
+![CI](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/git/latest/ci/pipeline-as-code?branch=main)
+![git-clone-yyds](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/git/latest/ci/git-clone-yyds)
+[![Star](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/star)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/star.link)
+[![Fork](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/fork)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/fork.link)
+
 基于 [CNB](https://cnb.cool) 平台的通用智能体记忆工具：以 Issue 为存储、知识库为语义检索，把 CNB 的 Issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。
 
 - **一记忆 = 一 Issue**：Issue `number` 是记忆唯一标识，免自定义 id / 免并发仲裁

@@ -15,15 +15,35 @@ from typing import Any
 import httpx
 import typer
 
+from . import __version__
 from .api import ApiError, CNBApiClient, ConfigError, env
 from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryError
 
 app = typer.Typer(
     name="cnb-agentic-memory",
     help="CNB Agentic Memory：基于 CNB 平台的通用智能体记忆工具",
-    no_args_is_help=True,
+    no_args_is_help=False,  # 无参数时由 callback 显示 help，避免拦截 --version
     add_completion=False,
 )
+
+
+@app.callback(invoke_without_command=True)
+def main_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="显示版本号并退出",
+    ),
+) -> None:
+    """cnb-agentic-memory：跨会话记忆的写入、检索与管理。"""
+    if version:
+        typer.echo(f"cnb-agentic-memory {__version__}")
+        raise typer.Exit()
+
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
 
 
 def _execute(coro_factory: Any) -> Any:
