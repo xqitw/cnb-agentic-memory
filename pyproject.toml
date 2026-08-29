@@ -52,7 +52,6 @@ dev = [
 
 [project.scripts]
 cnb-agentic-memory = "cnb_agentic_memory.cli:main"
-cnb-agentic-memory-mcp = "cnb_agentic_memory.mcp_server:main"
 
 [project.urls]
 Homepage = "https://cnb.cool/xqitw/cnb-agentic-memory"

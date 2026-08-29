@@ -19,7 +19,7 @@ pip install "cnb-agentic-memory[mcp]"
 
 ## 客户端接入
 
-**推荐：uvx 方式运行**（无需预装，uv 自动拉取包并执行）。注意此处 `--from` 不可省略：MCP 入口命令名（`cnb-agentic-memory-mcp`）与包名不同，且 `mcp` 依赖在 `[mcp]` extra 中，两者都要求显式指定来源包：
+**推荐：uvx 方式运行**（无需预装，uv 自动拉取包并执行）。`--from` 用于声明 `[mcp]` extra（MCP 依赖在 extra 中，无法随默认安装带上）：
 
 ```json
 {
@@ -29,7 +29,7 @@ pip install "cnb-agentic-memory[mcp]"
       "args": [
         "--from",
         "cnb-agentic-memory[mcp]",
-        "cnb-agentic-memory-mcp"
+        "mcp"
       ],
       "env": {
         "CNB_AGENTIC_MEMORY_TOKEN": "<token>",
@@ -46,7 +46,8 @@ pip install "cnb-agentic-memory[mcp]"
 {
   "mcpServers": {
     "cnb-agentic-memory": {
-      "command": "cnb-agentic-memory-mcp",
+      "command": "cnb-agentic-memory",
+      "args": ["mcp"],
       "env": {
         "CNB_AGENTIC_MEMORY_TOKEN": "<token>",
         "CNB_AGENTIC_MEMORY_REPO": "group/memory"
