@@ -30,7 +30,7 @@ include:
   - name: pytest
     script: uv run pytest -v
   - name: markdownlint
-    script: npx --yes markdownlint-cli2 'README.md' 'CONTRIBUTING.md' 'SECURITY.md' 'AGENTS.md' 'docs/*.md'
+    script: npx --yes markdownlint-cli2 '**/*.md'
 
 # 复用片段:发布到公网 PyPI
 # 密钥来自 xqitw/api-key 的 env-pypi.yml(PYPI_API_KEY,pypi- 开头 token)
