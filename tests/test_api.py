@@ -117,15 +117,6 @@ async def test_query_knowledge_base(client: CNBApiClient) -> None:
     assert params["query"] == "分区表"
     assert params["top_k"] == "3"
     assert chunks[0].number == 7
-    assert chunks[0].url == "https://cnb.cool/group/repo/-/issues/7"
-
-
-async def test_get_knowledge_base(client: CNBApiClient) -> None:
-    kb = {"id": "kb1", "issue_sync_enabled": True, "statistics": {"count": 3}}
-    with respx.mock(base_url=BASE) as mock:
-        mock.get("/group/repo/-/knowledge/base").respond(200, json=kb)
-        status = await client.get_knowledge_base()
-    assert status.issue_sync_enabled is True
 
 
 async def test_api_error_carries_body(client: CNBApiClient) -> None:
@@ -169,7 +160,7 @@ def test_explicit_args_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_invalid_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CNB_AGENTIC_MEMORY_TIMEOUT 非法值回落默认，与 Config.from_env 行为一致（评审意见）。"""
+    """CNB_AGENTIC_MEMORY_TIMEOUT 非法值回落默认。"""
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TIMEOUT", "abc")
     client = CNBApiClient(token="t", repo="g/r")
     assert client.timeout == 30.0

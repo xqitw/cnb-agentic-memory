@@ -66,7 +66,6 @@ except ApiError as err:
 | `create_comment(number, form)` | `POST /{-}/issues/{n}/comments` | 追加评论 |
 | `list_comments(number)` | `GET /{-}/issues/{n}/comments` | 评论列表 |
 | `query_knowledge_base(query, top_k)` | `GET /{-}/knowledge/base/query` | 语义检索（主检索通道） |
-| `get_knowledge_base()` | `GET /{-}/knowledge/base` | 知识库状态（降级判定） |
 
 > 实测约束：所有请求自动携带 `Accept: application/json`，缺失时 CNB 返回 406。
 
@@ -109,7 +108,6 @@ except ApiError as err:
 | `WriteResult` | `number` / `title`；`parts`（全部分片，单分片为空元组） |
 | `SearchResult` | `score` / `chunk` / `number` / `title` / `state` |
 | `KbChunk` | `score` / `chunk` / `metadata`；`number` 属性从 `metadata.path` 解析 |
-| `KnowledgeBase` | `id` / `issue_sync_enabled`（降级判定） |
 
 各字段语义见模型内 `Field(description=...)`——它是 P2 CLI 帮助文本与 P3 MCP 参数 Schema 的单一来源。
 

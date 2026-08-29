@@ -5,7 +5,6 @@
 """
 
 from .api import ApiError, CNBApiClient, ConfigError
-from .config import Config
 from .memory import Memory, MemoryError, SearchResult, WriteResult, normalize_title
 from .models import Comment, Issue, KbChunk, Label
 
@@ -17,7 +16,6 @@ __all__ = [
     "CNBApiClient",
     "ConfigError",
     "Comment",
-    "Config",
     "Issue",
     "KbChunk",
     "Label",

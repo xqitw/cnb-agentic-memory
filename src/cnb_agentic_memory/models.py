@@ -107,19 +107,3 @@ class KbChunk(_LenientModel):
             if tail.isdigit():
                 return int(tail)
         return None
-
-    @property
-    def url(self) -> str | None:
-        """记忆 Issue 的 Web 地址（缺失时为 None）。"""
-        url = self.metadata.get("url")
-        return str(url) if url else None
-
-
-class KnowledgeBase(_LenientModel):
-    """知识库状态（用于 memory_search 的降级判定）。"""
-
-    id: str | None = Field(default=None, description="知识库 ID")
-    issue_sync_enabled: bool = Field(
-        default=False,
-        description="是否启用记忆自动同步（未启用时检索不可用，需配置 .cnb.yml 流水线）",
-    )

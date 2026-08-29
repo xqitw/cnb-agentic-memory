@@ -20,7 +20,6 @@ from .models import (
     CreateIssueForm,
     Issue,
     KbChunk,
-    KnowledgeBase,
     Label,
     PatchIssueForm,
 )
@@ -229,7 +228,3 @@ class CNBApiClient:
             params["score_threshold"] = score_threshold
         data = await self._request("GET", self._path("knowledge/base/query"), params=params)
         return [KbChunk.model_validate(item) for item in data]
-
-    async def get_knowledge_base(self) -> KnowledgeBase:
-        """查询知识库状态（GET /{-}/knowledge/base），用于降级判定。"""
-        return KnowledgeBase.model_validate(await self._request("GET", self._path("knowledge/base")))
