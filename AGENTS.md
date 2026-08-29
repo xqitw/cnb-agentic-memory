@@ -27,7 +27,9 @@ cnb-agentic-memory — 基于 CNB 平台的通用智能体记忆工具。以 CNB
 - **一记忆 = 一 Issue**：Issue `number` 是记忆唯一标识，禁止自造 id 体系
 - **两步写入**：创建 Issue（POST /issues）后必须单独补打标签（POST /issues/{n}/labels）——创建接口对新标签会静默丢弃
 - **写路径显式校验**：所有写操作完成后 GET 回读确认，CNB API 存在静默失败形态
-- **title 强制生成**：keyword 搜索只匹配标题，`memory_write` 的 title 必须由工具生成关键词摘要
+- **title 撰写权在调用方**：keyword 搜索只匹配标题，`memory_write` 的
+  title 由智能体撰写（提炼高区分度关键词短语），工具只保证不变量：
+  无控制字符 + 非空兜底（正文首行截取）+ ≤60 字符
 
 ## 指导内容一致性（防漂移红线）
 

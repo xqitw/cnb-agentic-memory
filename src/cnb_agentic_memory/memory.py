@@ -458,7 +458,9 @@ class Memory:
         form = PatchIssueForm()
         if content is not None:
             form.body = content
-        if title is not None:
+        # title 传纯空白视为"未提供"而忽略：update 的 title 是显式变更语义，
+        # 若走 normalize 兜底会静默把标题改成正文首行（#56）
+        if title is not None and title.strip():
             form.title = normalize_title(title, content or title)
 
         has_form_changes = bool(form.model_dump(exclude_none=True))

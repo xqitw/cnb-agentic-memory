@@ -31,7 +31,7 @@ class Issue(_LenientModel):
     """记忆（一记忆 = 一 Issue，number 是记忆唯一标识）。"""
 
     number: int = Field(description="记忆唯一标识（仓库内自增 Issue 编号）")
-    title: str = Field(default="", description="标题，由工具生成的关键词摘要")
+    title: str = Field(default="", description="标题，调用方撰写的关键词摘要（工具兜底不变量）")
     body: str = Field(default="", description="记忆正文（Markdown）")
     state: str = Field(default="open", description="生命周期状态：open=有效，closed=已软删除")
     labels: list[Label] = Field(
@@ -61,7 +61,7 @@ class CreateIssueForm(_LenientModel):
     标签一律通过 add_labels 两步写入，在类型层杜绝误用。
     """
 
-    title: str = Field(description="标题，工具生成的关键词摘要（keyword 检索只匹配标题）")
+    title: str = Field(description="标题，调用方撰写的关键词摘要（keyword 检索只匹配标题）")
     body: str = Field(default="", description="记忆正文（Markdown，建议单条 ≤30KB，超长自动拆分）")
 
 
@@ -72,7 +72,7 @@ class PatchIssueForm(_LenientModel):
     不作为调用方接口暴露。
     """
 
-    title: str | None = Field(default=None, description="新标题（工具生成，一般不手动指定）")
+    title: str | None = Field(default=None, description="新标题（调用方撰写；纯空白视为未提供而忽略）")
     body: str | None = Field(default=None, description="新正文（全量替换，非增量追加）")
     state: str | None = Field(default=None, description="目标状态：open/closed")
     state_reason: str | None = Field(

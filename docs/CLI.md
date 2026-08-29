@@ -12,6 +12,7 @@
 | `CNB_AGENTIC_MEMORY_REPO` | 记忆仓库 slug，如 `group/memory` |
 | `CNB_AGENTIC_MEMORY_BASE_URL` | API 地址，默认 `https://api.cnb.cool` |
 | `CNB_AGENTIC_MEMORY_TIMEOUT` | 请求超时秒数，默认 30 |
+| `CNB_AGENTIC_MEMORY_DEBUG` | 设为 1 时未预期异常抛出完整堆栈（默认仅输出友好一行，退出码 70） |
 
 ## 命令
 

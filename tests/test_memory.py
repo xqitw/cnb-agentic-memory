@@ -417,6 +417,20 @@ async def test_update_title_and_tags_same_call(client: CNBApiClient, monkeypatch
     assert patch.called and labels.called
 
 
+async def test_update_blank_title_ignored(client: CNBApiClient) -> None:
+    """update title 传纯空白视为未提供而忽略，不静默改题（#56）。"""
+    memory = Memory(client)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
+        # 只有 tags 变更，title="   " 应被忽略（不触发 PATCH，仅标签 POST）
+        labels = mock.post("/group/repo/-/issues/5/labels").respond(200, json=[])
+        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "原标题"))
+        await memory.update(5, title="   ", tags=["x"])
+
+    assert not patch.called  # 纯空白 title 不应触发标题 PATCH
+    assert labels.called
+
+
 async def test_append_and_verify(client: CNBApiClient) -> None:
     memory = Memory(client)
     comment = {"id": "c9", "body": "备注"}
