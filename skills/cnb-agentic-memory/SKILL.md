@@ -71,7 +71,7 @@ cnb-agentic-memory write "PostgreSQL 分区表使用 pg_partman 按月分区，�
   --tag postgresql --tag 运维经验 \
   --category db
 # → {"number": 12, "title": "PostgreSQL 分区表 pg_partman",
-#    "url": "https://cnb.cool/group/memory/-/issues/12", "parts": []}
+#    "parts": []}
 ```
 
 - `--title`：提炼关键词短语，不传则兜底截取正文首行（质量会差，建议总是传）
@@ -84,7 +84,7 @@ cnb-agentic-memory write "PostgreSQL 分区表使用 pg_partman 按月分区，�
 ```bash
 cnb-agentic-memory search "分区表 慢查询" --top-k 3
 # → [{"score": 0.98, "number": 12, "title": "PostgreSQL 分区表 pg_partman",
-#     "state": "open", "chunk": "…命中片段…", "url": "…"}]
+#     "state": "open", "chunk": "…命中片段…"}]
 ```
 
 - 返回按相关度排序，`state: closed` 的记忆默认被过滤（除非 `--include-closed`）

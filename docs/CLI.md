@@ -41,8 +41,7 @@ cnb-agentic-memory write "PostgreSQL 分区表使用 pg_partman 解决慢查询"
 # {
 #   "number": 12,
 #   "title": "PostgreSQL 分区表 pg_partman",
-#   "url": "https://cnb.cool/group/memory/-/issues/12",
-#   "parts": []  # 超长拆分时携带全部分片（number/title/url）供循迹
+#   "parts": []  # 超长拆分时携带全部分片（number/title）供循迹
 # }
 
 # 读取 / 追加 / 删除

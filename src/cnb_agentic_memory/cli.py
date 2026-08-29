@@ -102,8 +102,7 @@ def write(
         {
             "number": result.number,
             "title": result.title,
-            "url": result.url,
-            "parts": [{"number": p.number, "title": p.title, "url": p.url} for p in result.parts],
+            "parts": [{"number": p.number, "title": p.title} for p in result.parts],
         }
     )
 
@@ -227,7 +226,6 @@ def search(
                 "title": r.title,
                 "state": r.state,
                 "chunk": r.chunk,
-                "url": r.url,
             }
             for r in results
         ]

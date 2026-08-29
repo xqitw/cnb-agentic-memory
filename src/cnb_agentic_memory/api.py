@@ -142,10 +142,6 @@ class CNBApiClient:
             # 2xx 但响应非 JSON（网关异常页等）：保留原文抛错，不掩盖真实响应
             raise ApiError(resp.status_code, f"响应非 JSON：{resp.text[:500]}") from err
 
-    def web_url(self, number: int) -> str:
-        """记忆 Issue 的 Web 页面地址。"""
-        return f"https://cnb.cool/{self.repo}/-/issues/{number}"
-
     # ---- Issue 端点（纯 CRUD，记忆语义见 memory.py）----
 
     async def create_issue(self, form: CreateIssueForm) -> Issue:

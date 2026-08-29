@@ -27,8 +27,7 @@ def _write_out(result: WriteResult) -> dict:
     return {
         "number": result.number,
         "title": result.title,
-        "url": result.url,
-        "parts": [{"number": p.number, "title": p.title, "url": p.url} for p in result.parts],
+        "parts": [{"number": p.number, "title": p.title} for p in result.parts],
     }
 
 
@@ -41,7 +40,6 @@ def _search_out(results: list[SearchResult]) -> list[dict]:
             "title": r.title,
             "state": r.state,
             "chunk": r.chunk,
-            "url": r.url,
         }
         for r in results
     ]

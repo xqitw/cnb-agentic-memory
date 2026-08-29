@@ -11,7 +11,7 @@ async with CNBApiClient(token="...", repo="group/memory") as client:
         "PostgreSQL 分区表使用 pg_partman 解决慢查询",
         title="PostgreSQL 分区表 pg_partman",
     )
-    print(result.number, result.url)
+    print(result.number, result.title)
 ```
 
 ## 配置
@@ -68,8 +68,6 @@ except ApiError as err:
 | `query_knowledge_base(query, top_k)` | `GET /{-}/knowledge/base/query` | 语义检索（主检索通道） |
 | `get_knowledge_base()` | `GET /{-}/knowledge/base` | 知识库状态（降级判定） |
 
-`web_url(number)` 返回记忆的 Web 页面地址。
-
 > 实测约束：所有请求自动携带 `Accept: application/json`，缺失时 CNB 返回 406。
 
 ## cnb_agentic_memory.memory — 记忆语义层
@@ -78,7 +76,7 @@ except ApiError as err:
 
 | 方法 | 说明 |
 | --- | --- |
-| `write(content, *, title, tags, category, verify)` | 写入记忆：创建 Issue → 补打标签（两步写入）→ 回读校验。返回 `WriteResult(number, title, url, parts)` |
+| `write(content, *, title, tags, category, verify)` | 写入记忆：创建 Issue → 补打标签（两步写入）→ 回读校验。返回 `WriteResult(number, title, parts)` |
 | `update(number, *, content, title, tags, category, verify)` | 更新正文/标题/标签，回读校验。`content` 为全量替换 |
 | `append(number, note, *, verify)` | 追加更新记录（评论），进知识库可被语义检索 |
 | `delete(number, *, verify)` | 软删除（`state=closed` + `not_planned`），可恢复 |
@@ -107,8 +105,8 @@ except ApiError as err:
 | --- | --- |
 | `Issue` | `number`（唯一标识）/ `title` / `body` / `state` / `labels` / `created_at` / `updated_at` |
 | `Comment` | `id` / `body` / `created_at` |
-| `WriteResult` | `number` / `title` / `url`；`parts`（全部分片，单分片为空元组） |
-| `SearchResult` | `score` / `chunk` / `number` / `title` / `state` / `url` |
+| `WriteResult` | `number` / `title`；`parts`（全部分片，单分片为空元组） |
+| `SearchResult` | `score` / `chunk` / `number` / `title` / `state` |
 | `KbChunk` | `score` / `chunk` / `metadata`；`number` 属性从 `metadata.path` 解析 |
 | `KnowledgeBase` | `id` / `issue_sync_enabled`（降级判定） |
 
