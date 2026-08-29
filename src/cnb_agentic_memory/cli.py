@@ -87,12 +87,17 @@ def _dump(data: Any) -> None:
     typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
 
 
-def _issue_out(issue: Any) -> dict:
-    """Issue 的 JSON 输出形状。"""
+def _issue_out(issue: Any, *, body_echo: bool = True) -> dict:
+    """Issue 的 JSON 输出形状。
+
+    body_echo=False 用于 list/keyword：CNB list 接口不回显正文，
+    输出 null（诚实表达"未回显，需 get 获取"）而非空字符串（会被
+    误解为"正文恰好是空的"）。
+    """
     return {
         "number": issue.number,
         "title": issue.title,
-        "body": issue.body,
+        "body": issue.body if body_echo else None,
         "state": issue.state,
         "labels": issue.label_names,
         "created_at": issue.created_at,
@@ -109,7 +114,9 @@ def write(
         "-t",
         help="标题：提炼高区分度关键词短语（keyword 检索只匹配标题）；不传则兜底为正文首行截取",
     ),
-    tag: list[str] = typer.Option(None, "--tag", help="标签，可多次传入"),
+    tag: list[str] = typer.Option(
+        None, "--tag", help="标签，可多次传入；单值内逗号会拆分为多标签（如 --tag 'a,b'）"
+    ),
     category: str = typer.Option(None, "--category", "-c", help="分类（自动补 category: 前缀）"),
 ) -> None:
     """写入一条记忆（两步写入 + 回读校验；超长自动拆分）。"""
@@ -143,10 +150,10 @@ def update(
     number: int = typer.Argument(..., help="记忆编号"),
     content: str = typer.Option(None, "--content", help="新正文（全量替换）"),
     title: str = typer.Option(None, "--title", "-t", help="新标题（工具保证不变量）"),
-    tag: list[str] = typer.Option(None, "--tag", help="追加标签，可多次传入"),
+    tag: list[str] = typer.Option(None, "--tag", help="追加标签，可多次传入；单值内逗号会拆分为多标签"),
     category: str = typer.Option(None, "--category", help="追加分类"),
 ) -> None:
-    """更新记忆正文/标题/标签。"""
+    """更新记忆（修正/补齐已有记忆的首选方式，勿删除重建）。"""
 
     def run(memory: Memory) -> Any:
         return memory.update(number, content=content, title=title, tags=tag, category=category)
@@ -171,7 +178,7 @@ def append(
 
 @app.command()
 def delete(number: int = typer.Argument(..., help="记忆编号")) -> None:
-    """软删除记忆（可 restore 恢复）。"""
+    """软删除记忆（仅默认检索隐藏，内容仍留知识库向量；真正废弃才用）。"""
 
     def run(memory: Memory) -> Any:
         return memory.delete(number)
@@ -194,11 +201,11 @@ def restore(number: int = typer.Argument(..., help="记忆编号")) -> None:
 @app.command("list")
 def list_cmd(
     category: str = typer.Option(None, "--category", "-c", help="按分类过滤"),
-    tag: list[str] = typer.Option(None, "--tag", help="按标签过滤，可多次传入"),
+    tag: list[str] = typer.Option(None, "--tag", help="按标签过滤，可多次传入；单值内逗号会拆分为多标签"),
     state: str = typer.Option("open", "--state", help="生命周期状态过滤：open/closed（CNB API 不支持 all）"),
     limit: int = typer.Option(20, "--limit", "-l", help="返回条数上限（1~100）"),
 ) -> None:
-    """按分类/标签过滤记忆列表。"""
+    """按分类/标签过滤记忆列表（不回显正文，需全文用 get <编号>）。"""
     if state not in (STATE_OPEN, STATE_CLOSED):
         typer.echo("错误：--state 仅支持 open/closed", err=True)
         raise typer.Exit(2)
@@ -208,7 +215,7 @@ def list_cmd(
         return memory.list(category=category, tags=tag, state=state, limit=limit)
 
     issues = _execute(run)
-    _dump([_issue_out(i) for i in issues])
+    _dump([_issue_out(i, body_echo=False) for i in issues])
 
 
 @app.command()
@@ -258,14 +265,14 @@ def keyword(
     limit: int = typer.Option(20, "--limit", "-l", help="返回条数上限（1~100）"),
     include_closed: bool = typer.Option(False, "--include-closed", help="包含已软删除的记忆"),
 ) -> None:
-    """关键词标题检索（与语义检索 search 命令并列，按需选择）。"""
+    """关键词标题检索（只回显标题元信息，需全文用 get <编号>）。"""
     limit = max(1, min(limit, 100))
 
     def run(memory: Memory) -> Any:
         return memory.keyword_search(query, limit=limit, include_closed=include_closed)
 
     issues = _execute(run)
-    _dump([_issue_out(i) for i in issues])
+    _dump([_issue_out(i, body_echo=False) for i in issues])
 
 
 @app.command(name="mcp")

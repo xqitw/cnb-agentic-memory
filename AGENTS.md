@@ -29,6 +29,24 @@ cnb-agentic-memory — 基于 CNB 平台的通用智能体记忆工具。以 CNB
 - **写路径显式校验**：所有写操作完成后 GET 回读确认，CNB API 存在静默失败形态
 - **title 强制生成**：keyword 搜索只匹配标题，`memory_write` 的 title 必须由工具生成关键词摘要
 
+## 指导内容一致性（防漂移红线）
+
+面向智能体的使用指导分布在多个通道，改动任何一处时必须同步检查其余通道：
+
+- **事实唯一权威**：docs/（标签字符白名单、title 实测结论、软删除与知识库
+  向量的关系等），其他通道一律是它的摘要
+- **四个同步点**：
+  1. skills/cnb-agentic-memory/SKILL.md —— skill 通道的原则全文
+  2. src/cnb_agentic_memory/mcp_server.py —— MCP 通道：server 级
+     instructions（原则精简版）+ 各工具 description（单工具语义）
+  3. src/cnb_agentic_memory/cli.py —— 命令 help 文本（一句话摘要）
+  4. src/cnb_agentic_memory/memory.py —— 语义层错误信息（动作指令，
+     CLI/MCP/SDK 三入口自动同源）
+- **锚点测试**：tests/test_guidance.py 断言关键语义锚定短语存在于
+  instructions 与关键工具描述中；改动描述删除关键语义时测试会失败
+- **禁止**：只在 SKILL.md 或只在工具描述中新增/修改指导语义而不检查
+  其余同步点
+
 ## 修改前检查
 
 - 先阅读文档与相关模块，不做"猜测式"改动

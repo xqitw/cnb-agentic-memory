@@ -19,7 +19,21 @@ from mcp.server.mcpserver import MCPServer
 from .api import CNBApiClient
 from .memory import Memory, MemoryError, SearchResult, WriteResult
 
-mcp = MCPServer("cnb-agentic-memory", instructions="CNB 智能体记忆工具：写入、检索、管理跨会话记忆")
+mcp = MCPServer(
+    "cnb-agentic-memory",
+    instructions=(
+        "CNB 智能体记忆工具：写入、检索、管理跨会话记忆。核心原则：\n"
+        "1. 修正/补充已有记忆一律用 memory_update / memory_append，"
+        "不要删除重建——memory_delete 是软删除，内容仍留在知识库向量中"
+        "（include_closed 可召回），仅用于真正废弃。\n"
+        "2. 写入失败若返回已落盘分片编号，按错误信息中的建议处理："
+        "update 补齐/修正，勿重复 write（会重复创建）。\n"
+        "3. 刚写入的记忆需 1~2 分钟知识库同步才能被 memory_search 检索到，"
+        "这是平台预期不是故障；精确确认用 memory_get。\n"
+        "4. memory_list / memory_keyword_search 不回显正文（body 为 null），"
+        "需要全文用 memory_get。"
+    ),
+)
 
 
 def _write_out(result: WriteResult) -> dict:
@@ -45,12 +59,17 @@ def _search_out(results: list[SearchResult]) -> list[dict]:
     ]
 
 
-def _issue_out(issue: Any) -> dict:
-    """记忆（Issue）的输出形状。"""
+def _issue_out(issue: Any, *, body_echo: bool = True) -> dict:
+    """记忆（Issue）的输出形状。
+
+    body_echo=False 用于 memory_list/memory_keyword_search：CNB list 接口
+    不回显正文，输出 null（诚实表达"未回显，需 memory_get 获取"）而非
+    空字符串（会被误解为"正文恰好是空的"）。
+    """
     return {
         "number": issue.number,
         "title": issue.title,
-        "body": issue.body,
+        "body": issue.body if body_echo else None,
         "state": issue.state,
         "labels": issue.label_names,
         "created_at": issue.created_at,
@@ -62,8 +81,10 @@ def _issue_out(issue: Any) -> dict:
     description=(
         "写入一条记忆。title 必须由你撰写：从内容提炼 3~8 个高区分度的关键词短语"
         "（keyword 标题检索只匹配 title，它决定记忆能否被找回），不要写长句或"
-        "概括性描述；不传 title 则由工具兜底截取正文首行。超长内容自动拆分为"
-        "多条，返回的 parts 含全部分片编号。"
+        "概括性描述；不传 title 则由工具兜底截取正文首行。tags 每个元素一个标签，"
+        "不要在一个元素里拼逗号。超长内容自动拆分为多条，返回的 parts 含"
+        "全部分片编号。写入失败若返回已落盘分片编号，按错误信息中的建议处理"
+        "（update 补齐/修正），勿重复 write。"
     )
 )
 async def memory_write(
@@ -95,7 +116,8 @@ async def memory_get(number: int) -> str:
 
 @mcp.tool(
     description=(
-        "更新记忆：content 为全量替换（非增量追加，追加用 memory_append）；"
+        "更新记忆（修正/补齐已有记忆的首选方式，勿删除重建）：content 为"
+        "全量替换（非增量追加，追加用 memory_append，单条上限 30KB）；"
         "title 规则同 memory_write；tags/category 为追加语义。"
     )
 )
@@ -125,7 +147,13 @@ async def memory_append(number: int, note: str) -> str:
         )
 
 
-@mcp.tool(description="软删除记忆（可恢复；默认检索与列表中不再出现）")
+@mcp.tool(
+    description=(
+        "软删除记忆（可恢复）。仅从默认检索与列表中隐藏，内容仍留在"
+        "知识库向量中（include_closed 可召回）——不是内容清除。"
+        "修正/补充记忆请用 memory_update，本工具仅用于真正废弃。"
+    )
+)
 async def memory_delete(number: int) -> str:
     """软删除记忆。"""
     async with CNBApiClient() as client:
@@ -143,8 +171,9 @@ async def memory_restore(number: int) -> str:
 
 @mcp.tool(
     description=(
-        "按分类/标签过滤记忆列表（结构化过滤）。语义检索请用 memory_search，"
-        "两者互补：list 适合按已知分类浏览，search 适合按内容模糊查找。"
+        "按分类/标签过滤记忆列表（结构化过滤，不回显正文，需要全文用"
+        " memory_get）。语义检索请用 memory_search，两者互补：list 适合"
+        "按已知分类浏览，search 适合按内容模糊查找。"
     )
 )
 async def memory_list(
@@ -160,7 +189,7 @@ async def memory_list(
         issues = await Memory(client).list(
             category=category, tags=tags, state=state, limit=max(1, min(limit, 100))
         )
-        return json.dumps([_issue_out(i) for i in issues], ensure_ascii=False)
+        return json.dumps([_issue_out(i, body_echo=False) for i in issues], ensure_ascii=False)
 
 
 @mcp.tool(description="最近更新的记忆")
@@ -194,7 +223,8 @@ async def memory_search(
 @mcp.tool(
     description=(
         "关键词标题检索：仅匹配标题，无法检索正文（记忆仓库须为专用仓库，"
-        "否则普通 Issue 会一并命中）。"
+        "否则普通 Issue 会一并命中）。结果不回显正文（body 为 null），"
+        "需要全文用 memory_get。"
         "当记忆 title 中含有确切关键词（技术名词、编号、命令）时比语义检索更精准。"
         "与 memory_search 并列的第二检索方法，按需选择。"
     )
@@ -209,7 +239,7 @@ async def memory_keyword_search(
         issues = await Memory(client).keyword_search(
             query, limit=max(1, min(limit, 100)), include_closed=include_closed
         )
-        return json.dumps([_issue_out(i) for i in issues], ensure_ascii=False)
+        return json.dumps([_issue_out(i, body_echo=False) for i in issues], ensure_ascii=False)
 
 
 def main() -> None:

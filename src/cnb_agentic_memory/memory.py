@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -42,6 +43,32 @@ VERIFY_INTERVAL_SECONDS = 0.5
 
 # 分页大小边界（CNB 服务端分页上限 100/页，超出被服务端拒绝）
 MAX_PAGE_SIZE = 100
+
+# 标签字符白名单与长度限制（实测 CNB 400 errcode 2000063 报错原文沉淀：
+# "只允许汉字、字母、数字或者小数点(.)、下划线(_)、冒号(:)、中划线(-)、
+# 正斜杠(/)、反斜杠(\)、全角符号以及中间空格（首尾不能为空格），
+# 长度必须在1到50个字符之间"）。写前预检用，不合法直接报错，
+# 避免 Issue 已落盘后标签步骤才失败产生孤儿分片
+LABEL_MAX_CHARS = 50
+# 白名单：CJK 统一表意文字、字母数字、允许的半角符号、全角标点/字母/数字、空白
+_LABEL_ALLOWED = re.compile(r"[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\w.:\-/\\ ]+")
+
+
+def validate_label(label: str) -> str | None:
+    """校验单个标签是否满足 CNB 字符白名单，不合法时返回原因，合法返回 None。
+
+    白名单来自 CNB 400 报错原文（见模块常量注释），写前预检使用：
+    在发起任何写请求之前拦下不合法标签，从源头避免孤儿分片。
+    """
+    if not label or not label.strip():
+        return "标签不能为空"
+    if len(label) > LABEL_MAX_CHARS:
+        return f"标签长度 {len(label)} 超过上限 {LABEL_MAX_CHARS} 字符"
+    if label != label.strip():
+        return "标签首尾不能包含空格"
+    if not _LABEL_ALLOWED.fullmatch(label):
+        return "标签含不允许的字符（只允许汉字、字母、数字、.: - / \\ 、全角符号及中间空格）"
+    return None
 
 
 def clamp_page_size(value: int) -> int:
@@ -80,14 +107,20 @@ class MemoryError(Exception):
     """记忆语义层错误（在 ApiError 之上，表达业务规则失败）。"""
 
 
+# 控制字符（C0 除 	 外与 DEL）：实测 CNB 不拒绝，落盘会污染 keyword 分词、
+# 展示与知识库向量，工具层必须清洗（服务端不拦 = 工具必须拦）
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 def normalize_title(title: str | None, content: str) -> str:
-    """规范化 title，保证两条不变量：非空 + 长度上限。
+    """规范化 title，保证三条不变量：无控制字符 + 非空 + 长度上限。
 
     title 撰写权在调用方（智能体）：应提炼高区分度关键词短语，
     keyword 检索只匹配标题。未提供时兜底为正文首行截取——
     不做语义提炼，只保证与内容相关且长度有界。
     """
     raw = title.strip() if title and title.strip() else _first_line(content)
+    raw = _CONTROL_CHARS.sub("", raw)
     body = raw[:MAX_TITLE_CHARS].strip()
     return body or "untitled memory"
 
@@ -204,7 +237,10 @@ class Memory:
         """统一标签归一化：category 自动补 category: 前缀（幂等），
         tags 为普通标签原样保留。
 
-        空值过滤，避免产生空标签；重复值去重，避免重复打标。
+        - 逗号拆分：单元素内含半角/全角逗号时拆为多个标签（智能体按
+          自然直觉传 "a,b" 是高频行为，实测会整条写入失败）
+        - 空值过滤，避免产生空标签；重复值去重，避免重复打标
+        - 首尾空白 strip（CNB 标签首尾不允许空格）
         """
         labels: list[str] = []
         stripped_category = (category or "").strip()
@@ -215,9 +251,11 @@ class Memory:
                 else f"{CATEGORY_PREFIX}{stripped_category}"
             )
         for tag in tags or []:
-            stripped = tag.strip()
-            if stripped and stripped not in labels:
-                labels.append(stripped)
+            # 逗号拆分：半角/全角逗号均视为分隔符（空格不拆，保留多词标签）
+            for piece in re.split(r"[,，]", tag):
+                stripped = piece.strip()
+                if stripped and stripped not in labels:
+                    labels.append(stripped)
         return labels
 
     async def _verify(self, number: int, *, field: str, expect: str) -> None:
@@ -238,6 +276,20 @@ class Memory:
         )
 
     # ---- 记忆操作 ----
+
+    @staticmethod
+    def _precheck_labels(labels: list[str]) -> None:
+        """写前预检：任何标签不合法直接抛 MemoryError，不发任何 API 请求。
+
+        实测 CNB 对标签有字符白名单与长度限制（400 errcode 2000063），
+        若在 create_issue 落盘后才因标签被拒，会产生孤儿分片。
+        fail-fast 把这类失败拦在发生之前。
+        """
+        reasons = {label: validate_label(label) for label in labels}
+        bad = {label: reason for label, reason in reasons.items() if reason}
+        if bad:
+            detail = "；".join(f"{label!r}：{reason}" for label, reason in bad.items())
+            raise MemoryError(f"标签不合法（未发起任何写请求）：{detail}")
 
     async def write(
         self,
@@ -263,6 +315,7 @@ class Memory:
         base_title = normalize_title(title, content)
         parts = _split_body(content)
         all_labels = self._normalize_labels(tags, category)
+        self._precheck_labels(all_labels)
         created: _List[WriteResult] = []
 
         # 拆分时按实际分片数算 (i/n) 后缀宽度并预留，保证总长不超上限
@@ -284,11 +337,14 @@ class Memory:
                     await self._verify(issue.number, field="title", expect=final_title)
         except Exception as err:
             if created:  # 已有分片落盘（含落盘但无标签），必须让调用方可循迹
-                done = ", ".join(f"#{r.number}" for r in created)
+                health = await self._health_check_shards(created, parts)
                 reason = f"{type(err).__name__}: {err}"
                 raise MemoryError(
-                    f"写入失败（已完成 {len(created)}/{len(parts)}：{done}），"
-                    f"已落盘分片可按需软删除清理；原始错误：{reason}"
+                    f"写入失败（已完成 {len(created)}/{len(parts)}）。"
+                    f"已落盘分片体检：\n{health}"
+                    "恢复优先级：update 补齐/修正 > append 续写 > delete 废弃（最后手段，"
+                    "软删除内容仍留在知识库向量中）；切勿重复 write（会重复创建）。"
+                    f"原始错误：{reason}"
                 ) from err
             raise
         # 多分片时 parts 携带全部分片供循迹；单分片时主字段即唯一分片
@@ -297,6 +353,32 @@ class Memory:
             if len(created) == 1
             else WriteResult(created[0].number, created[0].title, tuple(created))
         )
+
+    async def _health_check_shards(self, created: _List[WriteResult], parts: _List[str]) -> str:
+        """失败时对已落盘分片逐个体检：回读确认正文完整性与标签状态。
+
+        把"编号已知但状态不明"的孤儿分片变成可直接执行的行动建议；
+        单片回读失败不中断整体体检（该片标注"状态未知，请 get 确认"）。
+        """
+        lines: list[str] = []
+        for index, result in enumerate(created):
+            try:
+                issue = await self.client.get_issue(result.number)
+                body_ok = issue.body == parts[index]
+                labels_ok = bool(issue.label_names)
+                state_desc = "正文完整" if body_ok else "正文与期望不一致"
+                state_desc += "、标签已打" if labels_ok else "、标签缺失"
+                lines.append(
+                    f"  #{result.number} ({index + 1}/{len(parts)}) {state_desc}"
+                    f" → 建议：update {result.number} 修正/补齐"
+                )
+            except Exception as check_err:  # noqa: BLE001  # 体检失败不中断其余分片
+                lines.append(
+                    f"  #{result.number} ({index + 1}/{len(parts)}) "
+                    f"状态未知（回读失败：{type(check_err).__name__}）"
+                    f" → 建议：get {result.number} 人工确认"
+                )
+        return "\n".join(lines)
 
     async def update(
         self,
@@ -316,6 +398,13 @@ class Memory:
         """
         if content is not None and not content.strip():
             raise MemoryError("记忆内容不能为空")
+        if content is not None and _byte_len(content) > MAX_BODY_BYTES:
+            raise MemoryError(
+                f"update 正文 {_byte_len(content)} 字节超过单条上限 {MAX_BODY_BYTES}"
+                "（update 是全量替换，不支持自动拆分）。"
+                "建议：压缩正文，或 get 原文后按主题拆分，"
+                "增量信息用 append 追加（进知识库可被检索）"
+            )
         form = PatchIssueForm()
         if content is not None:
             form.body = content
@@ -326,6 +415,7 @@ class Memory:
         labels = self._normalize_labels(tags, category)
         if not has_form_changes and not labels:
             raise MemoryError("update 未指定任何变更（content/title/tags/category 至少一项）")
+        self._precheck_labels(labels)
 
         if has_form_changes:
             await self.client.update_issue(number, form)
