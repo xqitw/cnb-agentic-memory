@@ -222,6 +222,7 @@ def test_memory_search_returns_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     assert data[0]["score"] == 0.99
     assert data[0]["chunk"] == "命中片段"
     assert data[0]["number"] == 11
+    assert data[0]["title"] == "命中记忆"
     assert data[0]["state"] == "open"
 
 
@@ -242,6 +243,7 @@ def test_memory_update_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
     data = json.loads(result)
     assert data["number"] == 9
     assert data["title"] == "新标题"
+    assert data["labels"] == []  # _issue_out 输出 labels 字段（_LenientModel 空列表）
 
 
 def test_memory_append_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
