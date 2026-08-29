@@ -1,4 +1,4 @@
-"""cnb-agentic-memory-mcp：MCP Server 入口，把 Memory 语义层注册为 MCP 工具。
+"""MCP Server 实现（由 CLI 子命令 cnb-agentic-memory mcp 启动），把 Memory 语义层注册为 MCP 工具。
 
 设计约定：
 - 薄适配层：工具与 Memory 方法一一对应，业务逻辑（两步写入/回读校验/

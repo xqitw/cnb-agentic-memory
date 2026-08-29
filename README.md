@@ -13,7 +13,7 @@
 
 - **一记忆 = 一 Issue**：Issue `number` 是记忆唯一标识，免自定义 id / 免并发仲裁
 - **零 git 依赖**：全部走 CNB Open API，无 git 二进制 / 无本地 clone
-- **多形态**：SDK（Python）→ CLI（`cnb-agentic-memory`）→ MCP Server（`cnb-agentic-memory-mcp`）→ Agent Skill，按需取用
+- **多形态**：SDK（Python）→ CLI（`cnb-agentic-memory`，MCP Server 由其 `mcp` 子命令提供）→ Agent Skill，按需取用
 - **实测背书**：语义召回在 PoC 实测样例中可达 0.98+；两步写入、写后回读校验等架构红线均来自实测
 
 ## 安装
@@ -76,7 +76,7 @@ asyncio.run(main())
 | --- | --- | --- | --- |
 | Python SDK | `from cnb_agentic_memory import CNBApiClient, Memory` | [docs/API.md](docs/API.md) | ✅ 已实现 |
 | CLI | `cnb-agentic-memory --help` | [docs/CLI.md](docs/CLI.md) | ✅ 已实现 |
-| MCP Server | `cnb-agentic-memory-mcp` | [docs/MCP.md](docs/MCP.md) | ✅ 已实现 |
+| MCP Server | `cnb-agentic-memory mcp` | [docs/MCP.md](docs/MCP.md) | ✅ 已实现 |
 | Agent Skill | `npx skills add ...` | [skills/cnb-agentic-memory](skills/cnb-agentic-memory/SKILL.md) | ✅ 已实现 |
 
 ## 文档
