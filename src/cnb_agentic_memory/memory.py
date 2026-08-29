@@ -47,16 +47,18 @@ MAX_PAGE_SIZE = 100
 # 标签字符白名单与长度限制（实测 CNB 400 errcode 2000063 报错原文沉淀：
 # "只允许汉字、字母、数字或者小数点(.)、下划线(_)、冒号(:)、中划线(-)、
 # 正斜杠(/)、反斜杠(\)、全角符号以及中间空格（首尾不能为空格），
-# 长度必须在1到50个字符之间"）。写前预检用，不合法直接报错，
-# 避免 Issue 已落盘后标签步骤才失败产生孤儿分片
-LABEL_MAX_CHARS = 50
+# 长度必须在1到50个字符之间"；实测确认按 UTF-8 字节计数，cam-test
+# #78/#79：50 ASCII 通过、30 汉字（60 字节）被拒）。写前预检用，
+# 不合法直接报错，避免 Issue 已落盘后标签步骤才失败产生孤儿分片
+LABEL_MAX_BYTES = 50
 # 白名单显式字符类（不用 \\w：其 Unicode 语义会放行拉丁扩展字母等
 # 未实测字符，预检口径必须与服务端实测严格一致）：
 # 汉字 U+4E00-9FFF、CJK 标点 U+3000-303F、全角字符 U+FF00-FFEF、
-# 中文常用全角省略号 …(U+2026)、破折号 —(U+2014)、
 # ASCII 字母数字与实测允许的符号 . : - / \\ 及空格（下划线显式列出，
 # 对齐报错原文"下划线(_)"）
-_LABEL_ALLOWED = re.compile(r"[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\u2014\u2026A-Za-z0-9_.:\-/\\ ]+")
+# 实测补充（cam-test #80/#81）：CNB 报错原文的"全角符号"不含省略号
+# …(U+2026) 与破折号 —(U+2014)，服务端拒绝，故不入白名单
+_LABEL_ALLOWED = re.compile(r"[\u4e00-\u9fff\u3000-\u303f\uff00-\uffefA-Za-z0-9_.:\-/\\ ]+")
 
 
 def validate_label(label: str) -> str | None:
@@ -67,8 +69,11 @@ def validate_label(label: str) -> str | None:
     """
     if not label or not label.strip():
         return "标签不能为空"
-    if len(label) > LABEL_MAX_CHARS:
-        return f"标签长度 {len(label)} 超过上限 {LABEL_MAX_CHARS} 字符"
+    # 实测确认按 UTF-8 字节计数（30 汉字=30 字符=60 字节被服务端拒绝，
+    # 50 ASCII=50 字节通过，cam-test #78/#79）
+    label_bytes = len(label.encode("utf-8"))
+    if label_bytes > LABEL_MAX_BYTES:
+        return f"标签长度 {label_bytes} 字节超过上限 {LABEL_MAX_BYTES} 字节（UTF-8 计数，1 汉字/全角字符占 3 字节）"
     if label != label.strip():
         return "标签首尾不能包含空格"
     if not _LABEL_ALLOWED.fullmatch(label):
