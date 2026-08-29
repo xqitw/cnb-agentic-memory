@@ -1,6 +1,6 @@
-"""CNB API 数据模型（自建，只建 cam 消费的字段）。
+"""CNB API 数据模型（自建，只建本项目消费的字段）。
 
-建模原则：cam 是记忆系统，不是通用 Issue 客户端——字段以"是否参与记忆的
+建模原则：本项目是记忆系统，不是通用 Issue 客户端——字段以"是否参与记忆的
 生命周期或检索语义"为准入，CNB 的展示层字段（优先级/颜色/计数等）一律不收。
 策略：extra="ignore" 宽容未知字段——上游加字段不炸。
 
@@ -15,36 +15,38 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class _CamModel(BaseModel):
+class _LenientModel(BaseModel):
     """模型基类：宽容未知字段。"""
 
     model_config = ConfigDict(extra="ignore")
 
 
-class Label(_CamModel):
-    """Issue 标签（分类与标签命名空间约定的载体）。"""
+class Label(_LenientModel):
+    """Issue 标签（分类形如 category:db，标签为普通名称如 pgsql）。"""
 
-    name: str = Field(default="", description="标签名，如 category/db、tag/x")
+    name: str = Field(default="", description="标签名，如 category:db、pgsql")
 
 
-class Issue(_CamModel):
+class Issue(_LenientModel):
     """记忆（一记忆 = 一 Issue，number 是记忆唯一标识）。"""
 
     number: int = Field(description="记忆唯一标识（仓库内自增 Issue 编号）")
-    title: str = Field(default="", description="标题，由工具生成的关键词摘要（cam: 前缀）")
+    title: str = Field(default="", description="标题，由工具生成的关键词摘要")
     body: str = Field(default="", description="记忆正文（Markdown）")
     state: str = Field(default="open", description="生命周期状态：open=有效，closed=已软删除")
-    labels: list[Label] = Field(default_factory=list, description="标签列表（分类与命名空间约定）")
+    labels: list[Label] = Field(
+        default_factory=list, description="标签列表（分类 category:db、普通标签 pgsql）"
+    )
     created_at: str | None = Field(default=None, description="写入时间（ISO 8601）")
     updated_at: str | None = Field(default=None, description="最近更新时间（ISO 8601）")
 
     @property
     def label_names(self) -> list[str]:
-        """标签名列表（如 ["category/xxx", "tag/yyy"]）。"""
+        """标签名列表（如 ["category:db", "pgsql"]）。"""
         return [lb.name for lb in self.labels]
 
 
-class Comment(_CamModel):
+class Comment(_LenientModel):
     """追加更新记录（评论，进知识库可被语义检索）。"""
 
     id: str = Field(default="", description="记录 ID（服务端生成）")
@@ -52,7 +54,7 @@ class Comment(_CamModel):
     created_at: str | None = Field(default=None, description="追加时间（ISO 8601）")
 
 
-class CreateIssueForm(_CamModel):
+class CreateIssueForm(_LenientModel):
     """创建 Issue 请求体（POST /{-}/issues）。
 
     刻意不设 labels 字段：创建接口对不存在的标签静默丢弃（实测确认），
@@ -63,7 +65,7 @@ class CreateIssueForm(_CamModel):
     body: str = Field(default="", description="记忆正文（Markdown，建议单条 ≤30KB，超长自动拆分）")
 
 
-class PatchIssueForm(_CamModel):
+class PatchIssueForm(_LenientModel):
     """更新 Issue 请求体（PATCH /{-}/issues/{number}），None 字段不发送。
 
     state_reason 是生命周期内部契约：软删除/恢复由 memory 层自动设置，
@@ -79,13 +81,13 @@ class PatchIssueForm(_CamModel):
     )
 
 
-class CreateCommentForm(_CamModel):
+class CreateCommentForm(_LenientModel):
     """创建追加记录请求体（POST /{-}/issues/{number}/comments）。"""
 
     body: str = Field(description="追加的更新记录内容（进知识库，可被语义检索）")
 
 
-class KbChunk(_CamModel):
+class KbChunk(_LenientModel):
     """知识库检索单条结果（GET /{-}/knowledge/base/query）。"""
 
     score: float = Field(default=0.0, description="语义相关度得分（0~1，实测主通道 0.98+）")
@@ -113,7 +115,7 @@ class KbChunk(_CamModel):
         return str(url) if url else None
 
 
-class KnowledgeBase(_CamModel):
+class KnowledgeBase(_LenientModel):
     """知识库状态（用于 memory_search 的降级判定）。"""
 
     id: str | None = Field(default=None, description="知识库 ID")

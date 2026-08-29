@@ -8,7 +8,7 @@ import httpx
 import pytest
 from typer.testing import CliRunner
 
-from cam.cli import app
+from cnb_agentic_memory.cli import app
 
 runner = CliRunner()
 BASE = "https://api.cnb.cool"
@@ -59,38 +59,38 @@ def test_write_outputs_json(
 ) -> None:
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
-    monkeypatch.setattr("cam.memory.VERIFY_INTERVAL_SECONDS", 0)
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
 
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.post("/g/r/-/issues").mock(side_effect=echo_issue(9))
         mock.post("/g/r/-/issues/9/labels").respond(200, json=[])
-        mock.get("/g/r/-/issues/9").respond(200, json=issue_payload(9, "cam: 测试标题"))
+        mock.get("/g/r/-/issues/9").respond(200, json=issue_payload(9, "测试标题"))
         result = runner.invoke(app, ["write", "测试内容", "--title", "测试标题"])
 
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["number"] == 9
-    assert data["title"] == "cam: 测试标题"
+    assert data["title"] == "测试标题"
     assert "url" in data
 
 
 def test_get_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     with respx.mock(base_url=BASE) as mock:
         mock.get("/g/r/-/issues/7").respond(
             200,
             json={
                 "number": "7",
-                "title": "cam: t",
+                "title": "t",
                 "body": "正文",
                 "state": "open",
-                "labels": [{"name": "tag/x"}],
+                "labels": [{"name": "x"}],
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-01-01T00:00:00Z",
             },
@@ -100,14 +100,14 @@ def test_get_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["number"] == 7
-    assert data["labels"] == ["tag/x"]
+    assert data["labels"] == ["x"]
 
 
 def test_api_error_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     with respx.mock(base_url=BASE) as mock:
         mock.get("/g/r/-/issues/404").respond(404, json={"errcode": 404, "errmsg": "不存在"})
@@ -119,19 +119,19 @@ def test_api_error_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_missing_repo_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     """配置缺失：退出码 2 + 可操作的友好提示（评审反馈：令牌缺失须有提示）。"""
-    monkeypatch.delenv("CAM_REPO", raising=False)
-    monkeypatch.delenv("CAM_TOKEN", raising=False)
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_REPO", raising=False)
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_TOKEN", raising=False)
     result = runner.invoke(app, ["get", "1"])
 
     assert result.exit_code == 2
-    assert "CAM_TOKEN" in result.output
-    assert "CAM_REPO" in result.output
+    assert "CNB_AGENTIC_MEMORY_TOKEN" in result.output
+    assert "CNB_AGENTIC_MEMORY_REPO" in result.output
 
 
 def test_list_state_bogus_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """--state 仅支持 open/closed（CNB API 不支持 all），非法值前置拒绝。"""
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     result = runner.invoke(app, ["list", "--state", "all"])
 
@@ -143,8 +143,8 @@ def test_write_split_outputs_all_parts(monkeypatch: pytest.MonkeyPatch) -> None:
     """超长拆分时 CLI 输出全部分片编号（评审：循迹不漏片）。"""
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     counter = {"n": 0}
     sizes: list[int] = []
@@ -177,8 +177,8 @@ def test_list_limit_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     """--limit 超过 100 被 clamp 到 100（服务端分页上限）。"""
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/g/r/-/issues").respond(200, json=[])
@@ -192,8 +192,8 @@ def test_list_limit_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_search_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     kb_item = {
         "score": 0.9,
@@ -224,8 +224,8 @@ def test_search_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_list_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     with respx.mock(base_url=BASE) as mock:
         mock.get("/g/r/-/issues").respond(200, json=[])
@@ -236,19 +236,19 @@ def test_list_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_keyword_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    """cam keyword：透传 keyword/labels 过滤，limit 钳制，默认仅查 open（复审：CLI 层直接用例）。"""
+    """keyword 命令：透传 keyword 过滤，limit 钳制，默认仅查 open（复审：CLI 层直接用例）。"""
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     def issue(number: str, updated: str) -> dict:
         return {
             "number": number,
-            "title": f"cam: pg_partman {number}",
+            "title": f"pg_partman {number}",
             "body": "",
             "state": "open",
-            "labels": [{"name": "tag/postgresql"}],
+            "labels": [{"name": "postgresql"}],
             "updated_at": updated,
         }
 
@@ -264,7 +264,7 @@ def test_keyword_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
     params = dict(route.calls.last.request.url.params)
     assert params["keyword"] == "pg_partman"
     assert params["page_size"] == "100"  # limit 钳制到服务端分页上限
-    assert params["labels"] == "category/,tag/"  # 命名空间过滤透传（非 cam Issue 不混入）
+    assert "labels" not in params  # 专用记忆仓库，无需标签过滤
     assert params["state"] == "open"  # 默认仅查 open
 
 
@@ -272,8 +272,8 @@ def test_keyword_include_closed_queries_both_states(monkeypatch: pytest.MonkeyPa
     """--include-closed：open/closed 双查合并去重（与 SDK include_closed 语义一致）。"""
     import respx
 
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     def handler(request: httpx.Request) -> httpx.Response:
         state = dict(request.url.params).get("state")
@@ -282,10 +282,10 @@ def test_keyword_include_closed_queries_both_states(monkeypatch: pytest.MonkeyPa
             json=[
                 {
                     "number": "5" if state == "open" else "7",
-                    "title": "cam: pg_partman",
+                    "title": "pg_partman",
                     "body": "",
                     "state": state,
-                    "labels": [{"name": "tag/x"}],
+                    "labels": [{"name": "x"}],
                     "updated_at": "2026-01-05T00:00:00Z" if state == "open" else "2026-01-07T00:00:00Z",
                 }
             ],
@@ -303,8 +303,8 @@ def test_keyword_include_closed_queries_both_states(monkeypatch: pytest.MonkeyPa
 
 def test_keyword_empty_query_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """空检索词前置拒绝（MemoryError → 退出码 1）。"""
-    monkeypatch.setenv("CAM_TOKEN", "t")
-    monkeypatch.setenv("CAM_REPO", "g/r")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     result = runner.invoke(app, ["keyword", "   "])
 

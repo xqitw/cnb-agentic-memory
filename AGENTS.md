@@ -4,7 +4,7 @@
 
 ## 项目
 
-cnb-agentic-memory (cam) — 基于 CNB 平台的通用智能体记忆工具。以 CNB Issue 为存储、CNB 知识库为语义检索，以 MCP Server 形式对外提供服务。Python 3.11+，PyPI 包名 `cnb-agentic-memory`，CLI 命令 `cam`，MCP Server 入口 `cam-mcp`。
+cnb-agentic-memory — 基于 CNB 平台的通用智能体记忆工具。以 CNB Issue 为存储、CNB 知识库为语义检索，以 MCP Server 形式对外提供服务。Python 3.11+，PyPI 包名 `cnb-agentic-memory`，CLI 命令 `cnb-agentic-memory`，MCP Server 入口 `cnb-agentic-memory-mcp`。
 
 ## 目标
 
@@ -23,6 +23,7 @@ cnb-agentic-memory (cam) — 基于 CNB 平台的通用智能体记忆工具。�
 ## 架构约束（不可违背）
 
 - **零 git 依赖**：所有存储操作走 CNB Open API（Issue CRUD），禁止引入 git 二进制 / git 协议封装 / 本地 clone
+- **专用记忆仓库**：`CNB_AGENTIC_MEMORY_REPO` 指向的仓库须为专用仓库（全部 Issue 均为记忆），检索与列表不做记忆/非记忆区分
 - **一记忆 = 一 Issue**：Issue `number` 是记忆唯一标识，禁止自造 id 体系
 - **两步写入**：创建 Issue（POST /issues）后必须单独补打标签（POST /issues/{n}/labels）——创建接口对新标签会静默丢弃
 - **写路径显式校验**：所有写操作完成后 GET 回读确认，CNB API 存在静默失败形态
@@ -56,4 +57,4 @@ npx markdownlint-cli2 '**/*.md'   # Markdown 文档校验
 
 - 单元测试使用 respx mock CNB API 请求，不依赖真实网络
 - 集成测试（真实 CNB API）不进入 CI，本地手动验证
-- 集成测试需要 MEMORY_REPO / CNB_TOKEN 环境变量
+- 集成测试需要 CNB_AGENTIC_MEMORY_REPO / CNB_AGENTIC_MEMORY_TOKEN 环境变量

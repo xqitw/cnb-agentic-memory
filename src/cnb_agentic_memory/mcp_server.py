@@ -1,4 +1,4 @@
-"""cam-mcp：MCP Server 入口，把 Memory 语义层注册为 MCP 工具。
+"""cnb-agentic-memory-mcp：MCP Server 入口，把 Memory 语义层注册为 MCP 工具。
 
 设计约定：
 - 薄适配层：工具与 Memory 方法一一对应，业务逻辑（两步写入/回读校验/
@@ -6,7 +6,7 @@
 - 工具描述内嵌使用指导（title 撰写规范等），供智能体理解调用方式
 - 错误处理：ApiError/MemoryError 转为带错误说明的结果文本（isError），
   不包装语义，智能体收到后自行决策重试或降级
-- 配置统一 CAM_ 环境变量（CAM_TOKEN/CAM_REPO/CAM_BASE_URL/CAM_TIMEOUT）
+- 配置统一 CNB_AGENTIC_MEMORY_ 环境变量（CNB_AGENTIC_MEMORY_TOKEN/CNB_AGENTIC_MEMORY_REPO/CNB_AGENTIC_MEMORY_BASE_URL/CNB_AGENTIC_MEMORY_TIMEOUT）
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from mcp.server.mcpserver import MCPServer
 from .api import CNBApiClient
 from .memory import Memory, MemoryError, SearchResult, WriteResult
 
-mcp = MCPServer("cam", instructions="CNB 智能体记忆工具：写入、检索、管理跨会话记忆")
+mcp = MCPServer("cnb-agentic-memory", instructions="CNB 智能体记忆工具：写入、检索、管理跨会话记忆")
 
 
 def _write_out(result: WriteResult) -> dict:
@@ -74,7 +74,7 @@ async def memory_write(
     tags: list[str] | None = None,
     category: str | None = None,
 ) -> str:
-    """写入记忆。tags 会自动补 tag/ 前缀，category 补 category/ 前缀。
+    """写入记忆。category 自动补 category: 前缀（CNB 分类约定），tags 为普通标签。
 
     部分成功（拆分场景部分分片已落盘后失败）时返回 JSON：error 字段
     携带已落盘分片编号，供智能体循迹处理孤儿分片。
@@ -195,7 +195,8 @@ async def memory_search(
 
 @mcp.tool(
     description=(
-        "关键词标题检索：仅匹配记忆标题，无法检索正文。"
+        "关键词标题检索：仅匹配标题，无法检索正文（记忆仓库须为专用仓库，"
+        "否则普通 Issue 会一并命中）。"
         "当记忆 title 中含有确切关键词（技术名词、编号、命令）时比语义检索更精准。"
         "与 memory_search 并列的第二检索方法，按需选择。"
     )

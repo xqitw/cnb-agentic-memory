@@ -3,7 +3,7 @@
 `cnb-agentic-memory` 的 SDK 层是所有形态（CLI / MCP / Skill）的基座：架构红线（两步写入、写后回读校验、title 不变量、软删除）全部沉淀在此层，上层只是薄封装。
 
 ```python
-from cam import CNBApiClient, Memory
+from cnb_agentic_memory import CNBApiClient, Memory
 
 async with CNBApiClient(token="...", repo="group/memory") as client:
     memory = Memory(client)
@@ -16,19 +16,19 @@ async with CNBApiClient(token="...", repo="group/memory") as client:
 
 ## 配置
 
-配置优先级：**显式参数 > `CAM_` 前缀环境变量 > 默认值**。环境变量由 `cam.config.Config.from_env()` 统一读取，SDK / CLI / MCP 各形态行为一致。
+配置优先级：**显式参数 > `CNB_AGENTIC_MEMORY_` 前缀环境变量 > 默认值**。环境变量由 `cnb_agentic_memory.config.Config.from_env()` 统一读取，SDK / CLI / MCP 各形态行为一致。
 
 | 环境变量 | 说明 | 默认值 |
 | --- | --- | --- |
-| `CAM_TOKEN` | CNB API Token，需 `repo-issue:rw`（Issue 读写）+ `repo-code:r`（知识库检索） | 无（必填） |
-| `CAM_REPO` | 记忆仓库 slug，如 `group/memory` | 无（必填） |
-| `CAM_BASE_URL` | CNB Open API 地址 | `https://api.cnb.cool` |
-| `CAM_TIMEOUT` | 请求超时秒数 | `30` |
+| `CNB_AGENTIC_MEMORY_TOKEN` | CNB API Token，需 `repo-issue:rw`（Issue 读写）+ `repo-code:r`（知识库检索） | 无（必填） |
+| `CNB_AGENTIC_MEMORY_REPO` | 记忆仓库 slug，如 `group/memory` | 无（必填） |
+| `CNB_AGENTIC_MEMORY_BASE_URL` | CNB Open API 地址 | `https://api.cnb.cool` |
+| `CNB_AGENTIC_MEMORY_TIMEOUT` | 请求超时秒数 | `30` |
 
 ```python
 # 三种等价写法
 CNBApiClient(token="t", repo="g/r")  # 显式参数
-CNBApiClient()  # 全走 CAM_ 环境变量
+CNBApiClient()  # 全走 CNB_AGENTIC_MEMORY_ 环境变量
 CNBApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
 ```
 
@@ -38,11 +38,11 @@ SDK 不做重试/限流——调用方（智能体）收到错误后自行决策
 
 | 异常 | 含义 | 常见场景 |
 | --- | --- | --- |
-| `cam.ApiError` | CNB API 非 2xx，`status_code` + `message`（响应体原文） | 404 记忆不存在、401 token 无效 |
-| `cam.MemoryError` | 记忆业务规则失败（在 ApiError 之上） | 内容为空、写后回读校验不一致、知识库检索失败 |
+| `cnb_agentic_memory.ApiError` | CNB API 非 2xx，`status_code` + `message`（响应体原文） | 404 记忆不存在、401 token 无效 |
+| `cnb_agentic_memory.MemoryError` | 记忆业务规则失败（在 ApiError 之上） | 内容为空、写后回读校验不一致、知识库检索失败 |
 
 ```python
-from cam import ApiError, MemoryError
+from cnb_agentic_memory import ApiError, MemoryError
 
 try:
     await memory.write(content)
@@ -52,7 +52,7 @@ except ApiError as err:
     ...  # err.status_code / err.message 为 CNB 响应原文
 ```
 
-## cam.api — CNB API 薄封装
+## cnb_agentic_memory.api — CNB API 薄封装
 
 `CNBApiClient` 封装 9 个端点，纯 CRUD 语义，不加记忆业务规则。全部方法为 `async`。
 
@@ -72,7 +72,7 @@ except ApiError as err:
 
 > 实测约束：所有请求自动携带 `Accept: application/json`，缺失时 CNB 返回 406。
 
-## cam.memory — 记忆语义层
+## cnb_agentic_memory.memory — 记忆语义层
 
 `Memory(client)` 在 API 层之上实现记忆业务规则。一记忆 = 一 Issue，`number` 即记忆唯一标识。
 
@@ -86,20 +86,20 @@ except ApiError as err:
 | `get(number)` | 精确读取记忆原文 |
 | `list(*, category, tags, state, limit)` | 按分类/标签过滤列表（结构化过滤，与语义检索解耦） |
 | `list_recent(limit=5)` | 最近更新的记忆 |
-| `keyword_search(query, *, limit, include_closed)` | 关键词标题检索：仅匹配标题（CNB keyword 检索特性），无需知识库；仅返回 cam 管理的记忆（命名空间标签过滤）；`include_closed=True` 时 open/closed 各查一次合并去重，按 `updated_at` 降序 |
+| `keyword_search(query, *, limit, include_closed)` | 关键词标题检索：仅匹配标题（CNB keyword 检索特性），无需知识库；`include_closed=True` 时 open/closed 各查一次合并去重，按 `updated_at` 降序 |
 | `search(query, *, top_k, include_closed)` | 语义检索：知识库召回 → 解析 `number` → 回读补齐元信息。知识库不可用时抛 `MemoryError`，错误信息提示可改用 `keyword_search` |
 
 设计约定：
 
-- **title 撰写权在调用方**：keyword 检索只匹配标题，title 由智能体撰写（提炼高区分度关键词短语）；未提供时兜底为正文首行截取。工具只保证不变量：`cam:` 前缀 + ≤60 字符。MCP 与 Skill 层需在工具描述中给智能体明确的 title 撰写指导
+- **title 撰写权在调用方**：keyword 检索只匹配标题，title 由智能体撰写（提炼高区分度关键词短语）；未提供时兜底为正文首行截取。工具只保证不变量：非空 + ≤60 字符。MCP 与 Skill 层需在工具描述中给智能体明确的 title 撰写指导
 - **两步写入**：创建时不传 labels（服务端对新标签静默丢弃），创建后单独补打
 - **写后回读校验**：写操作 GET 回读确认，短重试（3 次 × 0.5s）后仍不一致才报错；`verify=False` 可跳过（仅测试）
 - **超长拆分**：正文超过 30KB 自动按段落拆为多条，title 带 `(i/n)` 序号关联；`WriteResult.parts` 携带全部分片供循迹
 - **软删除**：无硬删除接口（CNB DELETE 返回 404），`delete` 后可 `restore`
-- **标签命名空间**：`tags` 自动补 `tag/` 前缀、`category` 补 `category/` 前缀（已带前缀则原样保留，幂等）
+- **标签约定**：`category` 自动补 `category:` 前缀（对齐 CNB 平台分类约定，选择器中单选），`tags` 为普通标签原样保留；记忆仓库须为专用仓库（全部 Issue 均为记忆）
 - **检索分层**：语义检索走知识库向量召回（实测 0.98+）；`keyword_search` 是与它并列的第二检索方法（标题检索，无需知识库），供 title 含确切关键词时精准直达
 
-## cam.models — 数据模型
+## cnb_agentic_memory.models — 数据模型
 
 字段以「是否参与记忆的生命周期或检索语义」为准入，CNB 展示层字段（优先级/颜色/作者/计数等）不收。`extra="ignore"` 宽容上游新增字段。
 
@@ -115,6 +115,8 @@ except ApiError as err:
 各字段语义见模型内 `Field(description=...)`——它是 P2 CLI 帮助文本与 P3 MCP 参数 Schema 的单一来源。
 
 ## 记忆仓库前置条件
+
+**记忆仓库须为专用仓库**：仓库中全部 Issue 均为记忆，不与普通 Issue 混用（检索与列表不做记忆/非记忆区分）。
 
 知识库检索依赖仓库已配置 Issue 事件同步流水线。`.cnb.yml` 事件必须挂在 `$` 键下（顶层写法静默无效），且**先配置流水线再写入记忆**——错过事件的 Issue 不会被补录：
 
