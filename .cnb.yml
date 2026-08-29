@@ -130,4 +130,5 @@ $:
   tag_push:
     - <<: *pypi-publish
     - !reference [.code-wiki-pipeline]
+    - !reference [.release-pipeline]
     - *git-sync-pipeline
