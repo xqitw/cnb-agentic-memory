@@ -27,6 +27,7 @@
 | `cnb-agentic-memory recent [--limit]` | 最近更新的记忆 |
 | `cnb-agentic-memory search QUERY [--top-k] [--include-closed]` | 语义检索（知识库召回 + 元信息回读，按内容模糊查找；与 `cnb-agentic-memory keyword` 并列） |
 | `cnb-agentic-memory keyword QUERY [--limit] [--include-closed]` | 关键词标题检索（仅匹配标题，无需知识库；title 含确切关键词时更精准） |
+| `cnb-agentic-memory --version` | 显示版本号并退出 |
 
 ## 示例
 
