@@ -3,6 +3,7 @@
     "//ignores": "忽略运行时数据、依赖、构建产物等非源码文档；CLAUDE.md 为 Claude Code 的 @AGENTS.md 单行导入文件（协议消费），首行非标题属预期",
     "ignores": [
         "node_modules/**",
+        ".git/**",
         ".venv/**",
         ".pytest_cache/**",
         ".ruff_cache/**",
