@@ -27,7 +27,7 @@ def test_mixed_timezone_ordering() -> None:
 
 
 def test_naive_and_malformed_timestamps_fallback() -> None:
-    """解析失败（naive/畸形）回退字符串语义，不抛错且排在解析成功者之后。"""
+    """畸形时间戳回退字符串语义；naive 显式按 UTC 解释（不随部署机 TZ 变化）。"""
     issues = [
         _issue(1, "2026-08-29T10:00:00Z"),
         _issue(2, "not-a-date"),
@@ -40,10 +40,12 @@ def test_naive_and_malformed_timestamps_fallback() -> None:
     assert len(ordered) == 4
 
 
-def test_naive_timestamp_does_not_crash() -> None:
-    """naive 时间戳排序不抛 TypeError（实现需明确处理）。"""
+def test_naive_timestamp_treated_as_utc() -> None:
+    """naive 时间戳显式按 UTC 解释：与等价 UTC aware 排序一致（不随 TZ 变化）。"""
     issues = [
         _issue(1, "2026-08-29T10:00:00Z"),
-        _issue(2, "2026-08-29T09:00:00"),  # naive
+        _issue(2, "2026-08-29T09:00:00"),  # naive，语义上等同 09:00Z
+        _issue(3, "2026-08-29T11:00:00Z"),
     ]
-    sorted(issues, key=_updated_at_sort_key, reverse=True)  # 不应抛 TypeError
+    ordered = sorted(issues, key=_updated_at_sort_key, reverse=True)
+    assert [i.number for i in ordered] == [3, 1, 2]

@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import httpx
@@ -94,16 +94,19 @@ def _updated_at_sort_key(issue: Issue) -> tuple[int, str]:
     """keyword_search 合并去重后的时序排序键（#51）。
 
     CNB 当前统一返回 UTC Z 后缀，但时区表示不能依赖（混入 +08:00 等
-    偏移时字符串比较会错序）：优先解析为 datetime（aware，跨时区可比），
-    解析失败回退 (0, 原字符串) 保持与旧语义兼容且不抛错。
+    偏移时字符串比较会错序）：优先解析为 datetime（aware，跨时区可比）。
+    naive 时间戳（无时区后缀）显式按 UTC 解释——CNB 事实标准，且不受
+    部署机 TZ 影响；仅畸形格式回退 (0, 原字符串) 保持兼容且不抛错。
     """
     raw = issue.updated_at or ""
     if raw:
         try:
             dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            return (1, f"{dt.timestamp():020.6f}")
         except ValueError:
-            pass
+            return (0, raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return (1, f"{dt.timestamp():020.6f}")
     return (0, raw)
 
 
