@@ -16,7 +16,7 @@ uv add "cnb-agentic-memory[mcp]"       # 含 MCP Server
 # 或用 pip
 pip install "cnb-agentic-memory[mcp]"
 
-# MCP Server 启动（stdio，接入 Claude Desktop / CNB AI 助手等 MCP 客户端）
+# MCP Server 启动（stdio，接入 Claude Desktop / CNB AI 助手等 MCP 客户端；需 [mcp] extra）
 cam-mcp
 ```
 
