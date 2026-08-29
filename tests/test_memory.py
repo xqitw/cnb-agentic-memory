@@ -88,7 +88,6 @@ async def test_write_two_steps_and_verify(client: CNBApiClient, monkeypatch: pyt
     assert create.called and labels.called and verify.called
     assert result.number == 9
     assert result.title == "内容"
-    assert result.url == "https://cnb.cool/group/repo/-/issues/9"
 
 
 async def test_write_creates_issue_without_labels_payload(

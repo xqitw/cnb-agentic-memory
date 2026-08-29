@@ -168,10 +168,6 @@ def test_explicit_args_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.token == "x" and client.repo == "y"
 
 
-def test_web_url(client: CNBApiClient) -> None:
-    assert client.web_url(7) == "https://cnb.cool/group/repo/-/issues/7"
-
-
 def test_invalid_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     """CNB_AGENTIC_MEMORY_TIMEOUT 非法值回落默认，与 Config.from_env 行为一致（评审意见）。"""
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TIMEOUT", "abc")

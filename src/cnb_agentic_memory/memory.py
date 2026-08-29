@@ -45,13 +45,12 @@ VERIFY_INTERVAL_SECONDS = 0.5
 class WriteResult:
     """memory_write 的返回：主分片定位 + 全部分片信息。
 
-    超长拆分时 parts 含全部分片（number/title/url），供调用方循迹；
+    超长拆分时 parts 含全部分片（number/title），供调用方循迹；
     单分片时 parts 为空元组（主字段即唯一分片）。
     """
 
     number: int
     title: str
-    url: str
     parts: tuple[WriteResult, ...] = ()
 
 
@@ -64,7 +63,6 @@ class SearchResult:
     number: int
     title: str
     state: str
-    url: str
 
 
 class MemoryError(Exception):
@@ -190,9 +188,6 @@ class Memory:
 
     # ---- 内部工具 ----
 
-    def _url(self, number: int) -> str:
-        return self.client.web_url(number)
-
     @staticmethod
     def _normalize_labels(tags: list[str] | None, category: str | None) -> list[str]:
         """统一标签归一化：category 自动补 category: 前缀（幂等），
@@ -271,7 +266,7 @@ class Memory:
                 # 两步写入：创建时不传 labels（新标签会被静默丢弃），创建后单独补打。
                 # create_issue 成功即视为该分片已落盘，后续任何失败都可循迹
                 issue = await self.client.create_issue(CreateIssueForm(title=final_title, body=part))
-                created.append(WriteResult(issue.number, final_title, self._url(issue.number)))
+                created.append(WriteResult(issue.number, final_title))
                 if all_labels:
                     await self.client.add_labels(issue.number, all_labels)
                 if verify:
@@ -289,7 +284,7 @@ class Memory:
         return (
             created[0]
             if len(created) == 1
-            else WriteResult(created[0].number, created[0].title, created[0].url, tuple(created))
+            else WriteResult(created[0].number, created[0].title, tuple(created))
         )
 
     async def update(
@@ -457,7 +452,6 @@ class Memory:
                     number=number,
                     title=issue.title,
                     state=issue.state,
-                    url=self._url(number),
                 )
             )
         return results

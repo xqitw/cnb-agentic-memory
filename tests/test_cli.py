@@ -73,7 +73,6 @@ def test_write_outputs_json(
     data = json.loads(result.output)
     assert data["number"] == 9
     assert data["title"] == "测试标题"
-    assert "url" in data
 
 
 def test_get_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -68,8 +68,6 @@ except ApiError as err:
 | `query_knowledge_base(query, top_k)` | `GET /{-}/knowledge/base/query` | 语义检索（主检索通道） |
 | `get_knowledge_base()` | `GET /{-}/knowledge/base` | 知识库状态（降级判定） |
 
-`web_url(number)` 返回记忆的 Web 页面地址。
-
 > 实测约束：所有请求自动携带 `Accept: application/json`，缺失时 CNB 返回 406。
 
 ## cnb_agentic_memory.memory — 记忆语义层
