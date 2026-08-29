@@ -18,7 +18,7 @@
 
 | 命令 | 说明 |
 | --- | --- |
-| `cnb-agentic-memory write CONTENT --title TITLE [--tag TAG]... [--category CATEGORY]` | 写入记忆（两步写入 + 回读校验，超长自动拆分；--tag 单值内逗号拆分为多标签，标签限汉字/字母/数字/_.: - / \ /全角/中间空格，1~50 字符，写前预检） |
+| `cnb-agentic-memory write CONTENT --title TITLE [--tag TAG]... [--category CATEGORY]` | 写入记忆（两步写入 + 回读校验，超长自动拆分；--tag 单值内逗号拆分为多标签，标签限汉字/字母/数字/_.: - / \ /全角/中间空格，1~50 字节（UTF-8 计数），写前预检） |
 | `cnb-agentic-memory get NUMBER` | 读取记忆原文 |
 | `cnb-agentic-memory update NUMBER [--content] [--title] [--tag]... [--category]` | 更新正文/标题/标签（标签为追加语义） |
 | `cnb-agentic-memory append NUMBER NOTE` | 追加更新记录（进知识库可被语义检索） |

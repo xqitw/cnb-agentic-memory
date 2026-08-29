@@ -119,8 +119,8 @@ async def memory_get(number: int) -> str:
     description=(
         "更新记忆（修正/补齐已有记忆的首选方式，勿删除重建）：content 为"
         "全量替换，单条上限 30KB（不支持自动拆分）；增量信息用"
-        " memory_append 追加。title 规则同 memory_write；tags/category"
-        " 为追加语义。"
+        " memory_append 追加。title 规则同 memory_write，传纯空白视为"
+        "未提供而忽略；tags/category 为追加语义。"
     )
 )
 async def memory_update(

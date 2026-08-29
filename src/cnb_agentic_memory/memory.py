@@ -138,7 +138,7 @@ class MemoryError(Exception):
     """记忆语义层错误（在 ApiError 之上，表达业务规则失败）。"""
 
 
-# 控制字符（C0 除 	 外与 DEL）：实测 CNB 不拒绝，落盘会污染 keyword 分词、
+# 控制字符（C0 除 \\t 外与 DEL）：实测 CNB 不拒绝，落盘会污染 keyword 分词、
 # 展示与知识库向量，工具层必须清洗（服务端不拦 = 工具必须拦）
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 

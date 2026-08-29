@@ -24,6 +24,7 @@ async with CNBApiClient(token="...", repo="group/memory") as client:
 | `CNB_AGENTIC_MEMORY_REPO` | 记忆仓库 slug，如 `group/memory` | 无（必填） |
 | `CNB_AGENTIC_MEMORY_BASE_URL` | CNB Open API 地址 | `https://api.cnb.cool` |
 | `CNB_AGENTIC_MEMORY_TIMEOUT` | 请求超时秒数 | `30` |
+| `CNB_AGENTIC_MEMORY_DEBUG` | 设为 1 时未预期异常抛出完整堆栈（默认友好一行，退出码 70） | 未设置 |
 
 ```python
 # 三种等价写法
@@ -76,7 +77,7 @@ except ApiError as err:
 | 方法 | 说明 |
 | --- | --- |
 | `write(content, *, title, tags, category, verify)` | 写入记忆：创建 Issue → 补打标签（两步写入）→ 回读校验。返回 `WriteResult(number, title, parts)` |
-| `update(number, *, content, title, tags, category, verify)` | 更新正文/标题/标签，回读校验。`content` 为全量替换 |
+| `update(number, *, content, title, tags, category, verify)` | 更新正文/标题/标签，回读校验。`content` 为全量替换；`title` 传纯空白视为未提供而忽略 |
 | `append(number, note, *, verify)` | 追加更新记录（评论），进知识库可被语义检索 |
 | `delete(number, *, verify)` | 软删除（`state=closed` + `not_planned`），可恢复 |
 | `restore(number)` | 恢复软删除的记忆（reopen） |

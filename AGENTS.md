@@ -44,6 +44,8 @@ cnb-agentic-memory — 基于 CNB 平台的通用智能体记忆工具。以 CNB
   3. src/cnb_agentic_memory/cli.py —— 命令 help 文本（一句话摘要）
   4. src/cnb_agentic_memory/memory.py —— 语义层错误信息（动作指令，
      CLI/MCP/SDK 三入口自动同源）
+  5. src/cnb_agentic_memory/models.py —— Field description 是 SDK /
+     MCP Schema 的单一来源（模型字段语义变更时同步）
 - **锚点测试**：tests/test_guidance.py 断言关键语义锚定短语存在于
   instructions 与关键工具描述中；改动描述删除关键语义时测试会失败
 - **禁止**：只在 SKILL.md 或只在工具描述中新增/修改指导语义而不检查

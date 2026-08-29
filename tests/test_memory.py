@@ -431,6 +431,33 @@ async def test_update_blank_title_ignored(client: CNBApiClient) -> None:
     assert labels.called
 
 
+async def test_update_blank_title_only_raises(client: CNBApiClient) -> None:
+    """update 仅传空白 title（无其他变更）落入未指定任何变更报错，非静默（#56 组合用例）。"""
+    memory = Memory(client)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
+        with pytest.raises(MemoryError, match="未指定任何变更"):
+            await memory.update(5, title="   ")
+
+        assert mock.calls.call_count == 0
+
+
+async def test_update_blank_title_with_content_only_patches_body(
+    client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """空白 title + content 只 PATCH body，不 PATCH title（#56 组合用例）。"""
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
+    memory = Memory(client)
+    with respx.mock(base_url=BASE) as mock:
+        patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
+        mock.get("/group/repo/-/issues/5").respond(200, json=issue_payload(5, "t", body="新正文"))
+        await memory.update(5, content="新正文", title="   ")
+
+    payload = json.loads(patch.calls.last.request.content)
+    assert payload["body"] == "新正文"
+    assert "title" not in payload  # 空白 title 未进入 PATCH
+
+
 async def test_append_and_verify(client: CNBApiClient) -> None:
     memory = Memory(client)
     comment = {"id": "c9", "body": "备注"}
