@@ -1,7 +1,7 @@
-# CI:测试 + 类型检查 + 发布到公网 PyPI + code-wiki + git release + 同步 GitHub 镜像
+# CI:测试 + 类型检查 + 发布到公网 PyPI + code-wiki + git release + 同步 GitHub 镜像 + 发布 Skill 到 skillhub.cn
 # 结构对齐 xqitw/journapi:
 #   - main 分支 PR:跑测试(ruff + mypy + pytest + markdownlint)
-#   - 打 tag (v*):测试 -> 构建发布 PyPI -> code-wiki -> git release
+#   - 打 tag (v*):测试 -> 构建发布 PyPI -> code-wiki -> git release -> 同步 GitHub -> 发布 Skill
 # 额外挂载:记忆仓库的 issue 事件触发知识库同步(见 $ 分支)
 #
 # 引入 xqitw/pipes 模板聚合文件,提供 .code-wiki-pipeline / .release-pipeline
@@ -98,6 +98,40 @@ include:
         UV_PUBLISH_TOKEN: $PYPI_API_KEY
       script: uv publish
 
+# 复用片段:发布 Skill 到 skillhub.cn
+# 密钥来自 xqitw/api-key 的 env-skillhub-cn.yml(SKILL_HUB_CN_API_KEY,skh_ 开头)
+# 版本一致性:tag 名必须与 pyproject.toml / SKILL.md 的 version 一致,防止漂移
+.skillhub-publish: &skillhub-publish
+  docker:
+    image: docker.cnb.cool/xqitw/docker/dev-base:latest
+  runner:
+    cpus: 2
+  imports:
+    - https://cnb.cool/xqitw/api-key/-/blob/main/env-skillhub-cn.yml
+  stages:
+    - name: 安装 SkillHub CLI
+      script: curl -fsSL https://skillhub.cn/install/install.sh | bash -s -- --cli-only
+    - name: 校验版本一致性(tag = pyproject = SKILL.md)
+      script: |
+        TAG_VERSION="${CNB_BRANCH#v}"
+        PYPROJECT_VERSION="$(grep -m1 '^version = ' pyproject.toml | cut -d '"' -f2)"
+        SKILL_VERSION="$(grep -m1 '^version:' skills/cnb-agentic-memory/SKILL.md | sed 's/version:[[:space:]]*//')"
+        echo "tag=$TAG_VERSION pyproject=$PYPROJECT_VERSION skill=$SKILL_VERSION"
+        [ -n "$TAG_VERSION" ] && [ "$TAG_VERSION" = "$PYPROJECT_VERSION" ] \
+          || { echo "pyproject.toml version 与 tag 不一致,请先同步"; exit 1; }
+        [ "$TAG_VERSION" = "$SKILL_VERSION" ] \
+          || { echo "skills/cnb-agentic-memory/SKILL.md version 与 tag 不一致,请先同步"; exit 1; }
+    - name: 发布预检(dry-run)
+      script: |
+        export PATH="$HOME/.local/bin:$PATH"
+        skillhub publish skills/cnb-agentic-memory --dry-run
+    - name: 发布到 skillhub.cn
+      script: |
+        export PATH="$HOME/.local/bin:$PATH"
+        skillhub publish skills/cnb-agentic-memory \
+          --token "$SKILL_HUB_CN_API_KEY" \
+          --changelog "$CNB_TAG_MESSAGE"
+
 main:
   pull_request:
     - <<: *python-311
@@ -126,9 +160,10 @@ $:
       stages:
         - name: vscode go
           type: vscode:go
-  # 打 tag (v*):测试 + 发 PyPI + code-wiki + git release + 同步至 GitHub
+  # 打 tag (v*):测试 + 发 PyPI + code-wiki + git release + 同步至 GitHub + 发布 Skill
   tag_push:
     - <<: *pypi-publish
     - !reference [.code-wiki-pipeline]
     - !reference [.release-pipeline]
     - *git-sync-pipeline
+    - *skillhub-publish
