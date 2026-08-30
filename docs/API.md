@@ -42,7 +42,7 @@ SDK 不做重试/限流——调用方（智能体）收到错误后自行决策
 | `cnb_agentic_memory.ApiError` | CNB API 非 2xx，`status_code` + `message`（响应体原文） | 404 记忆不存在、401 token 无效 |
 | `cnb_agentic_memory.MemoryRuleError` | 记忆业务规则失败（在 ApiError 之上） | 内容为空、写后回读校验不一致、知识库检索失败 |
 
-> 2.0 起由 `MemoryError` 更名而来：旧名与 Python 内建 `MemoryError`（内存不足）同名遮蔽，`except` 语义可能混淆。
+> 2.0 起由 `MemoryError` 更名而来：旧名与 Python 内建 `MemoryError`（内存不足）同名遮蔽，`except` 语义可能混淆。1.x 用户升级时请将 `except MemoryError` 改为 `except MemoryRuleError`。
 
 ```python
 from cnb_agentic_memory import ApiError, MemoryRuleError
