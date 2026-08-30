@@ -99,7 +99,7 @@ include:
       script: uv publish
 
 # 复用片段:发布 Skill 到 skillhub.cn
-# 密钥来自 xqitw/api-key 的 env-skillhub.yml(SKILLHUB_TOKEN,skh_ 开头)
+# 密钥来自 xqitw/api-key 的 env-skillhub-cn.yml(SKILL_HUB_CN_API_KEY,skh_ 开头)
 # 版本一致性:tag 名必须与 pyproject.toml / SKILL.md 的 version 一致,防止漂移
 .skillhub-publish: &skillhub-publish
   docker:
@@ -107,7 +107,7 @@ include:
   runner:
     cpus: 2
   imports:
-    - https://cnb.cool/xqitw/api-key/-/blob/main/env-skillhub.yml
+    - https://cnb.cool/xqitw/api-key/-/blob/main/env-skillhub-cn.yml
   stages:
     - name: 安装 SkillHub CLI
       script: curl -fsSL https://skillhub.cn/install/install.sh | bash -s -- --cli-only
@@ -129,7 +129,7 @@ include:
       script: |
         export PATH="$HOME/.local/bin:$PATH"
         skillhub publish skills/cnb-agentic-memory \
-          --token "$SKILLHUB_TOKEN" \
+          --token "$SKILL_HUB_CN_API_KEY" \
           --changelog "$CNB_TAG_MESSAGE"
 
 main:
