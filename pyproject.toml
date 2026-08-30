@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cnb-agentic-memory"
-version = "2.0.1"
+version = "2.0.2"
 description = "CNB Agentic Memory 是基于 CNB 平台构建的通用记忆工具，把 CNB 的 issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。"
 readme = "README.md"
 requires-python = ">=3.11"

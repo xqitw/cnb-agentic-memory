@@ -2,8 +2,8 @@
 name: cnb-agentic-memory
 description: 基于 CNB 平台的智能体记忆工具：跨会话写入/检索/管理记忆。写入时必须自己撰写 title（提炼 3~8 个高区分度关键词短语，keyword 检索只匹配 title）。当用户提到记忆、记住、之前、上次、经验、教训时使用。用法：cnb-agentic-memory CLI（write/get/append/update/delete/restore/list/recent/search/keyword）。
 slug: cnb-agentic-memory
-displayName: CNB Agentic Memory
-version: 2.0.1
+displayName: CNB 智能体记忆
+version: 2.0.2
 summary: 基于 CNB 平台的智能体记忆工具：以 Issue 为存储、知识库为语义检索，CLI/MCP/SDK 三入口跨会话记忆。
 license: MIT
 homepage: https://cnb.cool/xqitw/cnb-agentic-memory
