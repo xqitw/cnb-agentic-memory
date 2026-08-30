@@ -164,7 +164,7 @@ def test_memory_get_api_error_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_memory_write_partial_success_transparent(monkeypatch):
-    """拆分部分成功：MemoryError 的循迹信息透传给智能体（评审 warning）。"""
+    """拆分部分成功：MemoryRuleError 的循迹信息透传给智能体（评审 warning）。"""
     import asyncio
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")

@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from cnb_agentic_memory import ApiError, CNBApiClient, Memory, MemoryError, normalize_title
+from cnb_agentic_memory import ApiError, CNBApiClient, Memory, MemoryRuleError, normalize_title
 
 BASE = "https://api.cnb.cool"
 
@@ -108,7 +108,7 @@ async def test_write_creates_issue_without_labels_payload(
 
 async def test_write_rejects_empty_content(client: CNBApiClient) -> None:
     memory = Memory(client)
-    with pytest.raises(MemoryError, match="不能为空"):
+    with pytest.raises(MemoryRuleError, match="不能为空"):
         await memory.write("   ")
 
 
@@ -121,7 +121,7 @@ async def test_write_verify_failure_raises(client: CNBApiClient, monkeypatch: py
         mock.post("/group/repo/-/issues/3/labels").respond(200, json=[])
         # 回读永远返回与期望不一致的 title
         mock.get("/group/repo/-/issues/3").respond(200, json=issue_payload(3, "mismatch"))
-        with pytest.raises(MemoryError, match="回读校验失败"):
+        with pytest.raises(MemoryRuleError, match="回读校验失败"):
             await memory.write("内容", verify=True)
 
 
@@ -273,13 +273,13 @@ def test_split_fuzz_lossless() -> None:
 
 
 async def test_search_network_error_suggests_fallback(client: CNBApiClient) -> None:
-    """知识库网络异常（非 404）同样触发 MemoryError 降级提示（评审 warning）。"""
+    """知识库网络异常（非 404）同样触发 MemoryRuleError 降级提示（评审 warning）。"""
     import httpx as httpx_mod
 
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/knowledge/base/query").mock(side_effect=httpx_mod.ConnectError("net down"))
-        with pytest.raises(MemoryError, match="keyword_search") as exc_info:
+        with pytest.raises(MemoryRuleError, match="keyword_search") as exc_info:
             await memory.search("查询")
 
     assert "ConnectError" in str(exc_info.value)  # 携带原始错误类型
@@ -298,13 +298,13 @@ def test_title_suffix_fits_limit_for_large_split_count() -> None:
 async def test_write_single_label_failure_reports_number(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """主路径（单条）创建成功但补标签失败：MemoryError 携带已落盘编号（评审意见：与拆分路径标准一致）。"""
+    """主路径（单条）创建成功但补标签失败：MemoryRuleError 携带已落盘编号（评审意见：与拆分路径标准一致）。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.post("/group/repo/-/issues").mock(side_effect=echo_issue(40))
         mock.post("/group/repo/-/issues/40/labels").respond(500, json={"errcode": 500, "errmsg": "boom"})
-        with pytest.raises(MemoryError, match="#40") as exc_info:
+        with pytest.raises(MemoryRuleError, match="#40") as exc_info:
             await memory.write("内容", title="t", tags=["x"])
 
     assert "ApiError" in str(exc_info.value)  # 携带原始错误摘要
@@ -313,7 +313,7 @@ async def test_write_single_label_failure_reports_number(
 async def test_write_partial_failure_reports_created(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """多分片写入中途失败：MemoryError 携带已创建分片编号（评审意见：孤儿 Issue 可循迹）。"""
+    """多分片写入中途失败：MemoryRuleError 携带已创建分片编号（评审意见：孤儿 Issue 可循迹）。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = ("段落。\n\n" + "x" * 20000) * 3
@@ -328,7 +328,7 @@ async def test_write_partial_failure_reports_created(
 
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.post("/group/repo/-/issues").mock(side_effect=create_side_effect)
-        with pytest.raises(MemoryError, match="已完成 1/") as exc_info:
+        with pytest.raises(MemoryRuleError, match="已完成 1/") as exc_info:
             await memory.write(long_content, verify=False)
 
     assert "#1" in str(exc_info.value)  # 已创建分片可循迹
@@ -385,7 +385,7 @@ async def test_update_nothing_raises(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         # 未提供任何变更时直接拒绝，零网络调用（评审意见：空变更前置）。
         # 注意：断言必须在 mock 上下文内，call_count 才反映真实调用
-        with pytest.raises(MemoryError, match="未指定任何变更"):
+        with pytest.raises(MemoryRuleError, match="未指定任何变更"):
             await memory.update(5)
 
         assert mock.calls.call_count == 0  # 任何 HTTP 调用都算失败
@@ -436,7 +436,7 @@ async def test_update_blank_title_only_raises(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
-        with pytest.raises(MemoryError, match="未指定任何变更"):
+        with pytest.raises(MemoryRuleError, match="未指定任何变更"):
             await memory.update(5, title="   ")
 
         assert mock.calls.call_count == 0
@@ -478,7 +478,7 @@ async def test_append_verify_failure(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.post("/group/repo/-/issues/5/comments").respond(201, json={"id": "c9", "body": "备注"})
         mock.get("/group/repo/-/issues/5/comments").respond(200, json=[])
-        with pytest.raises(MemoryError, match="评论未落盘"):
+        with pytest.raises(MemoryRuleError, match="评论未落盘"):
             await memory.append(5, "备注")
 
 
@@ -614,13 +614,13 @@ async def test_search_include_closed(client: CNBApiClient) -> None:
 
 
 async def test_search_kb_unavailable_suggests_fallback(client: CNBApiClient) -> None:
-    """知识库 404 → MemoryError 提示可改用 keyword_search。"""
+    """知识库 404 → MemoryRuleError 提示可改用 keyword_search。"""
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/knowledge/base/query").respond(
             404, json={"errcode": 404, "errmsg": "知识库未启用"}
         )
-        with pytest.raises(MemoryError, match="keyword_search") as exc_info:
+        with pytest.raises(MemoryRuleError, match="keyword_search") as exc_info:
             await memory.search("查询")
 
     assert isinstance(exc_info.value.__cause__, ApiError)

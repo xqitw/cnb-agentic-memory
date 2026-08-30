@@ -377,7 +377,7 @@ def test_keyword_include_closed_queries_both_states(monkeypatch: pytest.MonkeyPa
 
 
 def test_keyword_empty_query_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """空检索词前置拒绝（MemoryError → 退出码 1）。"""
+    """空检索词前置拒绝（MemoryRuleError → 退出码 1）。"""
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 

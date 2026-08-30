@@ -2,7 +2,7 @@
 
 设计约定：
 - 输出 JSON（--json 或默认）便于智能体消费，人类可读格式仅 list/search 展示用
-- 错误透传：ApiError/MemoryError 输出到 stderr 并以非零码退出，不包装语义
+- 错误透传：ApiError/MemoryRuleError 输出到 stderr 并以非零码退出，不包装语义
 - 配置统一走 CNB_AGENTIC_MEMORY_ 环境变量（与 SDK/MCP 一致），命令行参数可覆盖
 """
 
@@ -17,7 +17,7 @@ import typer
 
 from . import __version__
 from .api import ApiError, CNBApiClient, ConfigError, env
-from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryError
+from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryRuleError
 
 app = typer.Typer(
     name="cnb-agentic-memory",
@@ -66,7 +66,7 @@ def _execute(coro_factory: Any) -> Any:
     except ApiError as err:
         typer.echo(f"API 错误（{err.status_code}）：{err.message}", err=True)
         raise typer.Exit(1) from err
-    except MemoryError as err:
+    except MemoryRuleError as err:
         typer.echo(f"错误：{err}", err=True)
         raise typer.Exit(1) from err
     except httpx.HTTPError as err:

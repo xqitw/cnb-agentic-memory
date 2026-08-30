@@ -4,7 +4,7 @@
 - 薄适配层：工具与 Memory 方法一一对应，业务逻辑（两步写入/回读校验/
   title 不变量/超长拆分/软删除）全部在 SDK 层
 - 工具描述内嵌使用指导（title 撰写规范等），供智能体理解调用方式
-- 错误处理：ApiError/MemoryError 转为带错误说明的结果文本（isError），
+- 错误处理：ApiError/MemoryRuleError 转为带错误说明的结果文本（isError），
   不包装语义，智能体收到后自行决策重试或降级
 - 配置统一 CNB_AGENTIC_MEMORY_ 环境变量（CNB_AGENTIC_MEMORY_TOKEN/CNB_AGENTIC_MEMORY_REPO/CNB_AGENTIC_MEMORY_BASE_URL/CNB_AGENTIC_MEMORY_TIMEOUT）
 """
@@ -20,7 +20,7 @@ from mcp.server.mcpserver import MCPServer
 
 from . import __version__
 from .api import CNBApiClient
-from .memory import Memory, MemoryError, SearchResult, WriteResult
+from .memory import Memory, MemoryRuleError, SearchResult, WriteResult
 
 _DIST_NAME = "cnb-agentic-memory"  # PyPI 发行名（pyproject [project].name 同源）
 
@@ -165,7 +165,7 @@ async def memory_write(
         async with CNBApiClient() as client:
             result = await Memory(client).write(content, title=title, tags=tags, category=category)
             return json.dumps(_write_out(result), ensure_ascii=False)
-    except MemoryError as err:
+    except MemoryRuleError as err:
         return json.dumps({"error": str(err)}, ensure_ascii=False)
 
 

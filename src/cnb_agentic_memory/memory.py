@@ -134,8 +134,12 @@ class SearchResult:
     state: str
 
 
-class MemoryError(Exception):
-    """记忆语义层错误（在 ApiError 之上，表达业务规则失败）。"""
+class MemoryRuleError(Exception):
+    """记忆语义层错误（在 ApiError 之上，表达业务规则失败）。
+
+    2.0 起由 ``MemoryError`` 更名而来：旧名与 Python 内建 ``MemoryError``
+    （内存不足）同名遮蔽，SDK 用户 ``except`` 语义可能混淆。
+    """
 
 
 # 控制字符（C0 除 \\t 外与 DEL）：实测 CNB 不拒绝，落盘会污染 keyword 分词、
@@ -305,7 +309,7 @@ class Memory:
                 return
             if attempt < VERIFY_RETRIES - 1:
                 await asyncio.sleep(VERIFY_INTERVAL_SECONDS)  # 异步等待，不阻塞事件循环
-        raise MemoryError(
+        raise MemoryRuleError(
             f"写路径回读校验失败：issue #{number} 的 {field} 与期望不一致（期望 {expect!r}，实际 {actual!r}）"
         )
 
@@ -313,7 +317,7 @@ class Memory:
 
     @staticmethod
     def _precheck_labels(labels: list[str]) -> None:
-        """写前预检：任何标签不合法直接抛 MemoryError，不发任何 API 请求。
+        """写前预检：任何标签不合法直接抛 MemoryRuleError，不发任何 API 请求。
 
         实测 CNB 对标签有字符白名单与长度限制（400 errcode 2000063），
         若在 create_issue 落盘后才因标签被拒，会产生孤儿分片。
@@ -323,7 +327,7 @@ class Memory:
         bad = {label: reason for label, reason in reasons.items() if reason}
         if bad:
             detail = "；".join(f"{label!r}：{reason}" for label, reason in bad.items())
-            raise MemoryError(f"标签不合法（未发起任何写请求）：{detail}")
+            raise MemoryRuleError(f"标签不合法（未发起任何写请求）：{detail}")
 
     async def write(
         self,
@@ -341,11 +345,11 @@ class Memory:
         - 创建后补打标签（两步写入红线）
         - 超长内容自动拆分为多条，title 带 (i/n) 后缀关联；拆分无损
         - verify=False 可跳过回读校验（仅测试用）
-        - 任何一步失败时抛出 MemoryError，携带已落盘分片编号与原始错误摘要，
+        - 任何一步失败时抛出 MemoryRuleError，携带已落盘分片编号与原始错误摘要，
           便于循迹清理（Issue 创建成功即记为已落盘，与后续步骤失败无关）
         """
         if not content.strip():
-            raise MemoryError("记忆内容不能为空")
+            raise MemoryRuleError("记忆内容不能为空")
         base_title = normalize_title(title, content)
         parts = _split_body(content)
         all_labels = self._normalize_labels(tags, category)
@@ -373,7 +377,7 @@ class Memory:
             if created:  # 已有分片落盘（含落盘但无标签），必须让调用方可循迹
                 health = await self._health_check_shards(created, parts, all_labels)
                 reason = f"{type(err).__name__}: {err}"
-                raise MemoryError(
+                raise MemoryRuleError(
                     f"写入失败（已完成 {len(created)}/{len(parts)}）。"
                     f"已落盘分片体检：\n{health}"
                     "恢复优先级：update 补齐/修正 > append 续写 > delete 废弃（最后手段，"
@@ -447,9 +451,9 @@ class Memory:
         - 各变更项独立生效，同次调用可同时更新正文/标题/标签
         """
         if content is not None and not content.strip():
-            raise MemoryError("记忆内容不能为空")
+            raise MemoryRuleError("记忆内容不能为空")
         if content is not None and _byte_len(content) > MAX_BODY_BYTES:
-            raise MemoryError(
+            raise MemoryRuleError(
                 f"update 正文 {_byte_len(content)} 字节超过单条上限 {MAX_BODY_BYTES}"
                 "（update 是全量替换，不支持自动拆分）。"
                 "建议：压缩正文，或 get 原文后按主题拆分，"
@@ -466,7 +470,7 @@ class Memory:
         has_form_changes = bool(form.model_dump(exclude_none=True))
         labels = self._normalize_labels(tags, category)
         if not has_form_changes and not labels:
-            raise MemoryError("update 未指定任何变更（content/title/tags/category 至少一项）")
+            raise MemoryRuleError("update 未指定任何变更（content/title/tags/category 至少一项）")
         self._precheck_labels(labels)
 
         if has_form_changes:
@@ -486,13 +490,13 @@ class Memory:
     async def append(self, number: int, note: str, *, verify: bool = True) -> Comment:
         """追加更新记录（评论进知识库，可被语义检索）。"""
         if not note.strip():
-            raise MemoryError("追加内容不能为空")
+            raise MemoryRuleError("追加内容不能为空")
         comment = await self.client.create_comment(number, CreateCommentForm(body=note))
         if verify:
             # 按创建倒序取最新一页，新评论必在首页（评论超 100 条时不误报）
             comments = await self.client.list_comments(number, sort="-created")
             if not any(c.id == comment.id for c in comments):
-                raise MemoryError(f"写路径回读校验失败：issue #{number} 评论未落盘")
+                raise MemoryRuleError(f"写路径回读校验失败：issue #{number} 评论未落盘")
         return comment
 
     async def delete(self, number: int, *, verify: bool = True) -> Issue:
@@ -503,7 +507,7 @@ class Memory:
         if verify:
             issue = await self.client.get_issue(number)
             if issue.state != STATE_CLOSED:
-                raise MemoryError(f"写路径回读校验失败：issue #{number} 未进入 closed 状态")
+                raise MemoryRuleError(f"写路径回读校验失败：issue #{number} 未进入 closed 状态")
         return deleted
 
     async def restore(self, number: int) -> Issue:
@@ -552,7 +556,7 @@ class Memory:
         - include_closed=False（默认）仅返回 open 记忆
         """
         if not query.strip():
-            raise MemoryError("检索词不能为空")
+            raise MemoryRuleError("检索词不能为空")
         seen: dict[int, Issue] = {}
         states = (STATE_OPEN,) if not include_closed else (STATE_OPEN, STATE_CLOSED)
         for state in states:
@@ -575,7 +579,7 @@ class Memory:
     ) -> _List[SearchResult]:
         """语义检索（知识库向量召回 → 解析 number → 回读原文补齐元信息）。
 
-        - 知识库不可用（404/网络异常）时抛出 MemoryError，错误信息提示
+        - 知识库不可用（404/网络异常）时抛出 MemoryRuleError，错误信息提示
           可改用 keyword_search（关键词标题检索，与语义检索并列的第二方法）
         - include_closed=False 时过滤掉已软删除的记忆
         - 单个命中回读失败（如已删除/网络异常）跳过该条，不中断整体检索
@@ -586,7 +590,7 @@ class Memory:
             )
         except (ApiError, httpx.HTTPError) as err:
             reason = f"{type(err).__name__}: {err}"
-            raise MemoryError(
+            raise MemoryRuleError(
                 f"知识库检索失败（{reason}）。"
                 f"可改用 keyword_search 按标题关键词检索，"
                 f"注意知识库需先配置 .cnb.yml 流水线才会建立"

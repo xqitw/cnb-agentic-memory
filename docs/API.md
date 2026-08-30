@@ -40,14 +40,16 @@ SDK 不做重试/限流——调用方（智能体）收到错误后自行决策
 | 异常 | 含义 | 常见场景 |
 | --- | --- | --- |
 | `cnb_agentic_memory.ApiError` | CNB API 非 2xx，`status_code` + `message`（响应体原文） | 404 记忆不存在、401 token 无效 |
-| `cnb_agentic_memory.MemoryError` | 记忆业务规则失败（在 ApiError 之上） | 内容为空、写后回读校验不一致、知识库检索失败 |
+| `cnb_agentic_memory.MemoryRuleError` | 记忆业务规则失败（在 ApiError 之上） | 内容为空、写后回读校验不一致、知识库检索失败 |
+
+> 2.0 起由 `MemoryError` 更名而来：旧名与 Python 内建 `MemoryError`（内存不足）同名遮蔽，`except` 语义可能混淆。
 
 ```python
-from cnb_agentic_memory import ApiError, MemoryError
+from cnb_agentic_memory import ApiError, MemoryRuleError
 
 try:
     await memory.write(content)
-except MemoryError as err:
+except MemoryRuleError as err:
     ...  # 业务规则失败，含回读校验失败
 except ApiError as err:
     ...  # err.status_code / err.message 为 CNB 响应原文
@@ -85,7 +87,7 @@ except ApiError as err:
 | `list(*, category, tags, state, limit)` | 按分类/标签过滤列表（结构化过滤，与语义检索解耦） |
 | `list_recent(limit=5)` | 最近更新的记忆 |
 | `keyword_search(query, *, limit, include_closed)` | 关键词标题检索：仅匹配标题（CNB keyword 检索特性），无需知识库；`include_closed=True` 时 open/closed 各查一次合并去重，按 `updated_at` 降序 |
-| `search(query, *, top_k, include_closed)` | 语义检索：知识库召回 → 解析 `number` → 回读补齐元信息。知识库不可用时抛 `MemoryError`，错误信息提示可改用 `keyword_search` |
+| `search(query, *, top_k, include_closed)` | 语义检索：知识库召回 → 解析 `number` → 回读补齐元信息。知识库不可用时抛 `MemoryRuleError`，错误信息提示可改用 `keyword_search` |
 
 设计约定：
 

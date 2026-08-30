@@ -5,7 +5,7 @@
 """
 
 from .api import ApiError, CNBApiClient, ConfigError
-from .memory import Memory, MemoryError, SearchResult, WriteResult, normalize_title
+from .memory import Memory, MemoryRuleError, SearchResult, WriteResult, normalize_title
 from .models import Comment, Issue, KbChunk, Label
 
 __version__ = "2.0.0"
@@ -20,7 +20,7 @@ __all__ = [
     "KbChunk",
     "Label",
     "Memory",
-    "MemoryError",
+    "MemoryRuleError",
     "normalize_title",
     "SearchResult",
     "WriteResult",
