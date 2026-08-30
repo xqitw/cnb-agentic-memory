@@ -12,8 +12,9 @@
 from __future__ import annotations
 
 import json
-from importlib.metadata import PackageMetadata, PackageNotFoundError, metadata
-from typing import Any
+from email.message import Message
+from importlib.metadata import PackageNotFoundError, metadata
+from typing import Any, cast
 
 from mcp.server.mcpserver import MCPServer
 
@@ -24,10 +25,14 @@ from .memory import Memory, MemoryError, SearchResult, WriteResult
 _DIST_NAME = "cnb-agentic-memory"  # PyPI 发行名（pyproject [project].name 同源）
 
 
-def _dist_meta() -> PackageMetadata | None:
-    """本包安装元数据（pyproject [project] 单一来源；未安装时兜底 None）。"""
+def _dist_meta() -> Message | None:
+    """本包安装元数据（pyproject [project] 单一来源；未安装时兜底 None）。
+
+    metadata() 声明返回 PackageMetadata 协议，但运行时实现是
+    email.message.Message（get/get_all 语义可用），故按实际类型标注。
+    """
     try:
-        return metadata(_DIST_NAME)
+        return cast(Message, metadata(_DIST_NAME))
     except PackageNotFoundError:
         return None
 
@@ -50,24 +55,26 @@ def _homepage_url() -> str | None:
     return None
 
 
-def _summary() -> str | None:
-    """包描述（pyproject description 同源；未安装或缺失时兜底 None）。"""
+def _meta_field(name: str) -> str | None:
+    """读取单个元数据头（未安装或缺失/空值时兜底 None）。
+
+    PackageMetadata 底层是 email.message.Message，缺失 key 返回 None
+    而非抛 KeyError，故用 get() + 显式判空，避免 str(None) 得到 'None'。
+    """
     if _META is None:
         return None
-    try:
-        return str(_META["Summary"])
-    except KeyError:
-        return None
+    value = _META.get(name)
+    return str(value) if value else None
+
+
+def _summary() -> str | None:
+    """包描述（pyproject description 同源；未安装或缺失时兜底 None）。"""
+    return _meta_field("Summary")
 
 
 def _version() -> str:
     """包版本（安装元数据优先，未安装或缺失时兜底 __version__）。"""
-    if _META is not None:
-        try:
-            return str(_META["Version"])
-        except KeyError:
-            pass
-    return __version__
+    return _meta_field("Version") or __version__
 
 
 mcp = MCPServer(

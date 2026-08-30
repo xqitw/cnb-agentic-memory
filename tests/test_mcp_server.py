@@ -8,7 +8,9 @@ import httpx
 import pytest
 import respx
 
-from cnb_agentic_memory.mcp_server import mcp
+import cnb_agentic_memory.mcp_server as mcp_server
+from cnb_agentic_memory import __version__
+from cnb_agentic_memory.mcp_server import _DIST_NAME, mcp
 
 BASE = "https://api.cnb.cool"
 
@@ -48,11 +50,28 @@ def test_server_metadata() -> None:
     """serverInfo 元数据完整，且与包安装元数据（pyproject）同源。"""
     from importlib.metadata import metadata
 
-    assert mcp.name == "cnb-agentic-memory"
+    assert mcp.name == _DIST_NAME
     assert mcp.title == "CNB Agentic Memory"
-    assert mcp.description == str(metadata("cnb-agentic-memory")["Summary"])
-    assert mcp.version == str(metadata("cnb-agentic-memory")["Version"])
+    assert mcp.description == str(metadata(_DIST_NAME)["Summary"])
+    assert mcp.version == str(metadata(_DIST_NAME)["Version"])
     assert mcp.website_url == "https://cnb.cool/xqitw/cnb-agentic-memory"
+
+
+def test_meta_field_missing_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """元数据头缺失时兜底 None/__version__，而非字符串 'None'。
+
+    PackageMetadata 底层是 email.message.Message，缺失 key 返回 None
+    而非抛 KeyError（评审发现：原 except KeyError 为死代码）。
+    """
+    from email.message import Message
+
+    monkeypatch.setattr(mcp_server, "_META", Message())
+    assert mcp_server._meta_field("Summary") is None
+    assert mcp_server._meta_field("Version") is None
+    assert mcp_server._summary() is None
+    assert mcp_server._version() == __version__
 
 
 def test_tool_descriptions_embed_title_guidance() -> None:
