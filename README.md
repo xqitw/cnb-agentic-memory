@@ -71,7 +71,7 @@ npx skills add https://github.com/xqitw/cnb-agentic-memory.git
 | --- | --- | --- |
 | Python SDK | `from cnb_agentic_memory import CNBApiClient, Memory` | [docs/API.md](docs/API.md)（配置、错误处理、语义层设计约定） |
 | CLI | `cnb-agentic-memory --help` | [docs/CLI.md](docs/CLI.md)（命令清单、错误处理） |
-| MCP Server | `cnb-agentic-memory mcp`（需 `[mcp]` extra） | [docs/MCP.md](docs/MCP.md)（客户端接入配置、智能体使用指导） |
+| MCP Server | `cnb-agentic-memory-mcp`（需 `[mcp]` extra） | [docs/MCP.md](docs/MCP.md)（客户端接入配置、智能体使用指导） |
 | Agent Skill | `npx skills add https://cnb.cool/xqitw/cnb-agentic-memory.git` 或 GitHub 源 `https://github.com/xqitw/cnb-agentic-memory.git` | [skills/cnb-agentic-memory/SKILL.md](skills/cnb-agentic-memory/SKILL.md) |
 
 ## 贡献

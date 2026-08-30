@@ -275,20 +275,6 @@ def keyword(
     _dump([_issue_out(i, body_echo=False) for i in issues])
 
 
-@app.command(name="mcp")
-def mcp() -> None:
-    """启动 MCP Server（stdio，供 MCP 客户端接入；需安装 mcp extra）。"""
-    try:
-        from .mcp_server import main as mcp_main
-    except ImportError as err:
-        typer.echo(
-            f'缺少 MCP 依赖：{err}\n请安装：pip install "cnb-agentic-memory[mcp]"',
-            err=True,
-        )
-        raise typer.Exit(2) from err
-    mcp_main()
-
-
 def main() -> None:
     """CLI 入口（pyproject scripts 指向此处）。"""
     app()

@@ -1,4 +1,4 @@
-"""MCP Server 实现（由 CLI 子命令 cnb-agentic-memory mcp 启动），把 Memory 语义层注册为 MCP 工具。
+"""MCP Server 实现（由独立入口 cnb-agentic-memory-mcp 启动），把 Memory 语义层注册为 MCP 工具。
 
 设计约定：
 - 薄适配层：工具与 Memory 方法一一对应，业务逻辑（两步写入/回读校验/
@@ -12,15 +12,70 @@
 from __future__ import annotations
 
 import json
+from importlib.metadata import PackageMetadata, PackageNotFoundError, metadata
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
+from . import __version__
 from .api import CNBApiClient
 from .memory import Memory, MemoryError, SearchResult, WriteResult
 
+_DIST_NAME = "cnb-agentic-memory"  # PyPI 发行名（pyproject [project].name 同源）
+
+
+def _dist_meta() -> PackageMetadata | None:
+    """本包安装元数据（pyproject [project] 单一来源；未安装时兜底 None）。"""
+    try:
+        return metadata(_DIST_NAME)
+    except PackageNotFoundError:
+        return None
+
+
+_META = _dist_meta()
+
+
+def _homepage_url() -> str | None:
+    """仓库主页（pyproject [project.urls] 单一来源）。
+
+    hatchling 将 [project.urls] 全部写入 Project-URL 多值头（无独立
+    Homepage 头），故按 "name, url" 格式解析；缺失时兜底 None。
+    """
+    if _META is None:
+        return None
+    for entry in _META.get_all("Project-URL") or []:
+        name, _, url = entry.partition(",")
+        if name.strip().lower() == "homepage":
+            return url.strip() or None
+    return None
+
+
+def _summary() -> str | None:
+    """包描述（pyproject description 同源；未安装或缺失时兜底 None）。"""
+    if _META is None:
+        return None
+    try:
+        return str(_META["Summary"])
+    except KeyError:
+        return None
+
+
+def _version() -> str:
+    """包版本（安装元数据优先，未安装或缺失时兜底 __version__）。"""
+    if _META is not None:
+        try:
+            return str(_META["Version"])
+        except KeyError:
+            pass
+    return __version__
+
+
 mcp = MCPServer(
-    "cnb-agentic-memory",
+    _DIST_NAME,
+    title="CNB Agentic Memory",  # pyproject 无人类可读标题字段，无法单一来源
+    description=_summary(),
+    version=_version(),
+    website_url=_homepage_url(),
     instructions=(
         "CNB 智能体记忆工具：写入、检索、管理跨会话记忆。核心原则：\n"
         "1. 修正/补充已有记忆一律用 memory_update / memory_append，"
@@ -245,7 +300,7 @@ async def memory_keyword_search(
 
 
 def main() -> None:
-    """MCP Server 启动入口（由 CLI 子命令 cnb-agentic-memory mcp 调用）。"""
+    """MCP Server 启动入口（由独立入口 cnb-agentic-memory-mcp 调用）。"""
     mcp.run()
 
 

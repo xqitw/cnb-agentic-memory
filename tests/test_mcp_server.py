@@ -44,6 +44,17 @@ def test_ten_tools_registered() -> None:
     }
 
 
+def test_server_metadata() -> None:
+    """serverInfo 元数据完整，且与包安装元数据（pyproject）同源。"""
+    from importlib.metadata import metadata
+
+    assert mcp.name == "cnb-agentic-memory"
+    assert mcp.title == "CNB Agentic Memory"
+    assert mcp.description == str(metadata("cnb-agentic-memory")["Summary"])
+    assert mcp.version == str(metadata("cnb-agentic-memory")["Version"])
+    assert mcp.website_url == "https://cnb.cool/xqitw/cnb-agentic-memory"
+
+
 def test_tool_descriptions_embed_title_guidance() -> None:
     """title 撰写指导必须内嵌在 memory_write 工具描述（评审要求）。"""
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_write")

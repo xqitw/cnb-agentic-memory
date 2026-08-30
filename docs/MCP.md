@@ -1,6 +1,6 @@
 # MCP Server 参考
 
-`cnb-agentic-memory mcp` 把记忆语义层注册为 MCP 工具，供任何 MCP 客户端（Claude Desktop、CNB AI 助手等）调用。业务逻辑（两步写入、回读校验、title 不变量、超长拆分、软删除）全部在 SDK 层，MCP 是纯适配层。
+`cnb-agentic-memory-mcp` 把记忆语义层注册为 MCP 工具，供任何 MCP 客户端（Claude Desktop、CNB AI 助手等）调用。业务逻辑（两步写入、回读校验、title 不变量、超长拆分、软删除）全部在 SDK 层，MCP 是纯适配层。
 
 ## 安装与配置
 
@@ -29,8 +29,7 @@ pip install "cnb-agentic-memory[mcp]"
       "args": [
         "--from",
         "cnb-agentic-memory[mcp]",
-        "cnb-agentic-memory",
-        "mcp"
+        "cnb-agentic-memory-mcp"
       ],
       "env": {
         "CNB_AGENTIC_MEMORY_TOKEN": "<token>",
@@ -47,8 +46,7 @@ pip install "cnb-agentic-memory[mcp]"
 {
   "mcpServers": {
     "cnb-agentic-memory": {
-      "command": "cnb-agentic-memory",
-      "args": ["mcp"],
+      "command": "cnb-agentic-memory-mcp",
       "env": {
         "CNB_AGENTIC_MEMORY_TOKEN": "<token>",
         "CNB_AGENTIC_MEMORY_REPO": "group/memory"

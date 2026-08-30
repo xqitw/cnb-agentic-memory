@@ -154,9 +154,13 @@ async def test_api_error_carries_body(client: CNBApiClient) -> None:
     assert "404" in str(exc_info.value)
 
 
-def test_missing_config_raises_config_error() -> None:
+def test_missing_config_raises_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """配置缺失在构造时前置报错（含可操作提示），而非请求时才失败。"""
     from cnb_agentic_memory import ConfigError
+
+    # 显式空字符串因 or 语义会回落环境变量，先清除以保证测试环境无关
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_TOKEN", raising=False)
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_REPO", raising=False)
 
     with pytest.raises(ConfigError, match="CNB_AGENTIC_MEMORY_TOKEN"):
         CNBApiClient(token="", repo="g/r")

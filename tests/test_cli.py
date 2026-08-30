@@ -121,31 +121,6 @@ def test_no_args_shows_help() -> None:
     assert "Usage:" in result.output
 
 
-def test_mcp_subcommand_registered() -> None:
-    """mcp 子命令已注册（单入口模式：MCP Server 由 CLI 子命令提供）。"""
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "mcp" in result.output
-
-
-def test_mcp_missing_extra_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    """未安装 [mcp] extra 时，mcp 子命令给出安装指引并以退出码 2 退出。"""
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name: str, *args: object, **kwargs: object):
-        if name.endswith("mcp_server") or name == ".mcp_server":
-            raise ImportError("No module named 'mcp'")
-        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    result = runner.invoke(app, ["mcp"])
-    assert result.exit_code == 2
-    assert "缺少 MCP 依赖" in result.output
-    assert 'pip install "cnb-agentic-memory[mcp]"' in result.output
-
-
 def test_help_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
