@@ -92,6 +92,9 @@ class CNBApiClient:
                 base_url=self.base_url,
                 headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json"},
                 timeout=self.timeout,
+                # 显式跟随重定向（默认 False 会让 3xx 落入"响应非 JSON"分支，
+                # 抛出误导性 ApiError；实测 CNB API 当前无重定向场景，此处为健壮性预留）
+                follow_redirects=True,
             )
         return self._client
 

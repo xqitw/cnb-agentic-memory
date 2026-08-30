@@ -410,3 +410,59 @@ def test_keyword_empty_query_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code == 1
     assert "检索词不能为空" in result.output
+
+
+def test_append_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI append 命令直接用例（#54 盲区 1）。"""
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    with respx.mock(base_url=BASE) as mock:
+        mock.post("/g/r/-/issues/7/comments").respond(
+            200, json={"id": "123", "body": "追加内容", "created_at": "2026-01-01T00:00:00Z"}
+        )
+        # 回读校验（verify）：list_comments 取最新一页确认新评论落盘
+        mock.get("/g/r/-/issues/7/comments").respond(
+            200, json=[{"id": "123", "body": "追加内容", "created_at": "2026-01-01T00:00:00Z"}]
+        )
+        result = runner.invoke(app, ["append", "7", "追加内容"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["id"] == "123"
+    assert data["body"] == "追加内容"
+
+
+def test_delete_outputs_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI delete 命令直接用例（#54 盲区 1）。"""
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
+
+    with respx.mock(base_url=BASE) as mock:
+        mock.patch("/g/r/-/issues/7").mock(
+            side_effect=lambda request: httpx.Response(200, json=issue_payload(7, "t", state="closed"))
+        )
+        mock.get("/g/r/-/issues/7").respond(200, json=issue_payload(7, "t", state="closed"))
+        result = runner.invoke(app, ["delete", "7"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data == {"number": 7, "state": "closed"}
+
+
+def test_recent_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI recent 命令直接用例（#54 盲区 1）。"""
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues").respond(
+            200, json=[issue_payload(3, "最近记忆"), issue_payload(4, "次新记忆")]
+        )
+        result = runner.invoke(app, ["recent", "--limit", "2"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert [i["number"] for i in data] == [3, 4]
+    assert data[0]["body"] is None  # list 接口不回显正文（body_echo=False）

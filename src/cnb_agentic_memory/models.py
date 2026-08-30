@@ -49,7 +49,9 @@ class Issue(_LenientModel):
 class Comment(_LenientModel):
     """追加更新记录（评论，进知识库可被语义检索）。"""
 
-    id: str = Field(default="", description="记录 ID（服务端生成）")
+    # 实测（cam-test，官方 API 原始响应）：服务端返回字符串 id（19 位数字串，
+    # 超出 JS Number 安全整数范围），与官方 API 对齐为 str，禁止数字/字符串并存
+    id: str = Field(default="", description="记录 ID（服务端生成，实测为字符串，勿改数字类型）")
     body: str = Field(default="", description="追加的更新记录内容")
     created_at: str | None = Field(default=None, description="追加时间（ISO 8601）")
 

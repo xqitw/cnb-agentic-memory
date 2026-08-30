@@ -119,6 +119,30 @@ async def test_query_knowledge_base(client: CNBApiClient) -> None:
     assert chunks[0].number == 7
 
 
+async def test_query_knowledge_base_score_threshold_passed(client: CNBApiClient) -> None:
+    """score_threshold 传入时透传为查询参数（#54 盲区 2）。"""
+    kb_item = {
+        "score": 0.98,
+        "chunk": "片段",
+        "metadata": {"type": "issue", "path": "/group/repo/-/issues/7"},
+    }
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get("/group/repo/-/knowledge/base/query").respond(200, json=[kb_item])
+        await client.query_knowledge_base("分区表", top_k=3, score_threshold=0.5)
+
+    params = dict(route.calls.last.request.url.params)
+    assert params["score_threshold"] == "0.5"
+
+
+async def test_query_knowledge_base_omits_threshold_when_none(client: CNBApiClient) -> None:
+    """score_threshold=None（默认）时不携带该参数（#54 盲区 2 反向）。"""
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get("/group/repo/-/knowledge/base/query").respond(200, json=[])
+        await client.query_knowledge_base("分区表")
+
+    assert "score_threshold" not in dict(route.calls.last.request.url.params)
+
+
 async def test_api_error_carries_body(client: CNBApiClient) -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/issues/404").respond(404, json={"errcode": 404, "errmsg": "issue 不存在"})

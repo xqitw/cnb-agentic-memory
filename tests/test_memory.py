@@ -626,6 +626,25 @@ async def test_search_kb_unavailable_suggests_fallback(client: CNBApiClient) -> 
     assert isinstance(exc_info.value.__cause__, ApiError)
 
 
+async def test_search_skips_unreadable_hit(client: CNBApiClient) -> None:
+    """单命中回读失败（如已清理/网络异常）跳过该条，不中断整体检索（#54 盲区 3）。"""
+    memory = Memory(client)
+    kb_items = [
+        {"score": 0.99, "chunk": "片段1", "metadata": {"path": "/group/repo/-/issues/21", "type": "issue"}},
+        {"score": 0.95, "chunk": "片段2", "metadata": {"path": "/group/repo/-/issues/22", "type": "issue"}},
+    ]
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/group/repo/-/knowledge/base/query").respond(200, json=kb_items)
+        # #21 回读 500 失败，#22 正常
+        mock.get("/group/repo/-/issues/21").respond(500, json={"message": "boom"})
+        mock.get("/group/repo/-/issues/22").respond(200, json=issue_payload(22, "记忆乙"))
+
+        results = await memory.search("查询")
+
+    assert len(results) == 1  # 失败命中被跳过，不中断
+    assert results[0].number == 22
+
+
 async def test_search_dedupes_repeated_numbers(client: CNBApiClient) -> None:
     memory = Memory(client)
     kb_items = [
