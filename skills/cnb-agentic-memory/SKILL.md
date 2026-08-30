@@ -6,6 +6,13 @@ displayName: CNB Agentic Memory
 version: 2.0.0
 summary: 基于 CNB 平台的智能体记忆工具：以 Issue 为存储、知识库为语义检索，CLI/MCP/SDK 三入口跨会话记忆。
 license: MIT
+homepage: https://cnb.cool/xqitw/cnb-agentic-memory
+tags:
+  - 记忆
+  - 智能体
+  - MCP
+  - 知识库
+  - CLI
 ---
 
 # cnb-agentic-memory — 智能体记忆系统
