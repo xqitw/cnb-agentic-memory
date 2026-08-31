@@ -51,7 +51,7 @@ def test_server_metadata() -> None:
     from importlib.metadata import metadata
 
     assert mcp.name == _DIST_NAME
-    assert mcp.title == "CNB Agentic Memory"
+    assert mcp.title == "CNB Issue 智能体记忆系统"
     assert mcp.description == str(metadata(_DIST_NAME)["Summary"])
     assert mcp.version == str(metadata(_DIST_NAME)["Version"])
     assert mcp.website_url == "https://cnb.cool/xqitw/cnb-agentic-memory"

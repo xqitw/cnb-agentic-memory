@@ -21,7 +21,7 @@ from .memory import STATE_CLOSED, STATE_OPEN, Memory, MemoryRuleError
 
 app = typer.Typer(
     name="cnb-agentic-memory",
-    help="CNB Agentic Memory：基于 CNB 平台的通用智能体记忆工具",
+    help="CNB Issue 智能体记忆系统：基于 CNB 平台的通用智能体记忆工具",
     no_args_is_help=False,  # 无参数时由 callback 显示 help，避免拦截 --version
     add_completion=False,
 )

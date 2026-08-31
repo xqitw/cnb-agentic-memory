@@ -1,4 +1,4 @@
-# CNB Agentic Memory
+# CNB Issue 智能体记忆系统
 
 [![Latest Release](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/release)](https://cnb.cool/xqitw/cnb-agentic-memory/-/badge/release.link)
 [![PyPI](https://img.shields.io/pypi/v/cnb-agentic-memory.svg)](https://pypi.org/project/cnb-agentic-memory/)

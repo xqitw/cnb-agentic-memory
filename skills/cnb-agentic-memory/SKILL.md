@@ -4,13 +4,13 @@ description: 基于 CNB 平台的智能体记忆工具：跨会话写入/检索/
 slug: cnb-agentic-memory
 displayName: CNB Issue 智能体记忆系统
 version: 2.0.2
-summary: 基于 CNB 平台的智能体记忆工具：以 Issue 为存储、知识库为语义检索，CLI/MCP/SDK 三入口跨会话记忆。
+summary: CNB Issue 智能体记忆系统：以 Issue 为存储、知识库为语义检索，CLI/MCP/SDK 三入口跨会话记忆。
 license: MIT
 homepage: https://cnb.cool/xqitw/cnb-agentic-memory
 tags: [记忆, 智能体, MCP, 知识库, CLI]
 ---
 
-# cnb-agentic-memory — 智能体记忆系统
+# CNB Issue 智能体记忆系统（cnb-agentic-memory）
 
 基于 CNB 平台的跨会话记忆：一条记忆 = 一个 Issue，`number` 是记忆唯一标识。写入即持久化，读取走语义检索（知识库向量，高相关度）。记忆仓库中全部 Issue 均为记忆，检索与列表结果不区分记忆与普通 Issue。
 

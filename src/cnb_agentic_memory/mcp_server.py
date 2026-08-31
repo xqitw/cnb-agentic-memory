@@ -79,7 +79,7 @@ def _version() -> str:
 
 mcp = MCPServer(
     _DIST_NAME,
-    title="CNB Agentic Memory",  # pyproject 无人类可读标题字段，无法单一来源
+    title="CNB Issue 智能体记忆系统",  # pyproject 无人类可读标题字段，无法单一来源
     description=_summary(),
     version=_version(),
     website_url=_homepage_url(),
