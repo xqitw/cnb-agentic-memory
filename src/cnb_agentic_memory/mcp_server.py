@@ -91,8 +91,9 @@ mcp = MCPServer(
         "2. 写入失败若返回已落盘分片编号，按错误信息中的建议处理："
         "update 补齐/修正，勿重复 write（会重复创建）。超长内容拆分为"
         "多条时按返回的 parts 逐条处理，勿只处理首条。\n"
-        "3. 刚写入的记忆需 1~2 分钟知识库同步才能被 memory_search 检索到，"
-        "这是平台预期不是故障；精确确认用 memory_get。\n"
+        "3. 写入后能否立即被 memory_search 检索到取决于仓库知识库同步配置"
+        "（实时或定时入库，如每小时/每日），且受网络、记忆数量影响，"
+        "检索不到不是写入失败；需立即确认时用 memory_get 按 number 回查。\n"
         "4. memory_list / memory_keyword_search 不回显正文（body 为 null），"
         "需要全文用 memory_get。"
     ),
@@ -147,7 +148,8 @@ def _issue_out(issue: Any, *, body_echo: bool = True) -> dict:
         "概括性描述；不传 title 则由工具兜底截取正文首行。tags 每个元素一个标签，"
         "不要在一个元素里拼逗号。超长内容自动拆分为多条，返回的 parts 含"
         "全部分片编号。写入失败若返回已落盘分片编号，按错误信息中的建议处理"
-        "（update 补齐/修正），勿重复 write。"
+        "（update 补齐/修正），勿重复 write。写入后需立即确认用 memory_get "
+        "按 number 回查（能否立即语义检索取决于仓库同步配置，可能是定时入库）。"
     )
 )
 async def memory_write(

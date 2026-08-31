@@ -18,7 +18,8 @@ INSTRUCTIONS_ANCHORS = [
     "memory_update",
     "软删除",
     "知识库向量",
-    "1~2 分钟",
+    "定时入库",
+    "回查",
     "memory_get",
 ]
 
@@ -26,7 +27,7 @@ INSTRUCTIONS_ANCHORS = [
 TOOL_DESCRIPTION_ANCHORS: dict[str, list[str]] = {
     "memory_delete": ["知识库向量", "memory_update"],
     "memory_update": ["勿删除重建"],
-    "memory_write": ["逗号", "重复 write"],
+    "memory_write": ["逗号", "重复 write", "回查"],
     "memory_list": ["不回显正文", "memory_get"],
     "memory_keyword_search": ["不回显正文", "memory_get"],
 }
@@ -57,7 +58,7 @@ def test_tool_descriptions_contains_semantic_anchors() -> None:
 def test_skill_md_contains_core_semantics() -> None:
     """SKILL.md（skill 通道）必须包含核心语义锚点（AGENTS.md 同步点 1）。"""
     skill = Path("skills/cnb-agentic-memory/SKILL.md").read_text(encoding="utf-8")
-    for anchor in ["知识库向量", "update", "不回显正文", "逗号"]:
+    for anchor in ["知识库向量", "update", "不回显正文", "逗号", "回查"]:
         assert anchor in skill, f"SKILL.md 缺少锚点：{anchor}"
 
 
