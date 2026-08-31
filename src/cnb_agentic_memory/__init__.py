@@ -8,7 +8,7 @@ from .api import ApiError, CNBApiClient, ConfigError
 from .memory import Memory, MemoryRuleError, SearchResult, WriteResult, normalize_title
 from .models import Comment, Issue, KbChunk, Label
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 
 __all__ = [
     "__version__",
