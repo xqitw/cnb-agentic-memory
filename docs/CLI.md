@@ -51,7 +51,7 @@ cnb-agentic-memory get 12
 cnb-agentic-memory append 12 "追加了 pg_partman 配置示例"
 cnb-agentic-memory delete 12   # 软删除，cnb-agentic-memory restore 12 可恢复
 
-# 语义检索（需仓库配置 knowledge:update 流水线；实时同步通常分钟级可检索，定时入库需等下次运行，需立即确认用 get 回查）
+# 语义检索（需仓库配置 knowledge:update 流水线；实时同步通常秒级到分钟级可检索，定时入库需等下次运行，需立即确认用 get 回查）
 cnb-agentic-memory search "分区表 慢查询" --top-k 3
 
 # 关键词标题检索（与 search 并列，无需知识库；title 含确切关键词时更精准）
