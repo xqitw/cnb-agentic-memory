@@ -136,9 +136,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 headers = {"X-CNB-Token": "<token>", "X-CNB-Repo": "group/memory"}
 async with httpx2.AsyncClient(headers=headers) as http_client:
-    async with streamable_http_client(
-        "http://127.0.0.1:8000/mcp", http_client=http_client
-    ) as (read, write):
+    async with streamable_http_client("http://127.0.0.1:8000/mcp", http_client=http_client) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.call_tool("memory_get", {"number": 1})
