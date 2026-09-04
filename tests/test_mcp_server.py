@@ -695,3 +695,59 @@ def test_env_var_names_documented_correctly() -> None:
     assert "CNB_AGENTIC_MEMORY_MCP_TRANSPORT" in docs
     assert "CNB_AGENTIC_MEMORY_MCP_HOST" in docs
     assert "CNB_AGENTIC_MEMORY_MCP_PORT" in docs
+
+
+def test_parse_allowed_hosts() -> None:
+    """--allowed-host/env 白名单解析：逗号分隔，空/空白返回空列表。"""
+    from cnb_agentic_memory.mcp_server import parse_allowed_hosts
+
+    assert parse_allowed_hosts(None) == []
+    assert parse_allowed_hosts("") == []
+    assert parse_allowed_hosts("  ") == []
+    assert parse_allowed_hosts("a.com") == ["a.com"]
+    assert parse_allowed_hosts("a.com, b.com ,c.io") == ["a.com", "b.com", "c.io"]
+
+
+def test_security_settings_origin_and_ipv6(monkeypatch: pytest.MonkeyPatch) -> None:
+    """防护白名单：Origin 随 Host 同源生成（复审 warning1）；IPv6 监听加方括号（warning2）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "streamable-http", "--host", "0.0.0.0"])
+    sec = calls[-1]["transport_security"]
+    assert sec.enable_dns_rebinding_protection is True
+    # Origin 白名单随 Host 白名单同源生成（否则浏览器同源请求 403）
+    assert "http://127.0.0.1:*" in sec.allowed_origins
+    assert "http://localhost:*" in sec.allowed_origins
+
+    # 非通配 IPv6 监听：模式须带方括号（RFC 3986 Host 头格式）
+    mcp_server.main(["--transport", "streamable-http", "--host", "2001:db8::1"])
+    sec6 = calls[-1]["transport_security"]
+    assert "[2001:db8::1]:*" in sec6.allowed_hosts
+    assert "http://[2001:db8::1]:*" in sec6.allowed_origins
+
+
+def test_allowed_host_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--allowed-host 追加白名单（复审 info：反代保留真实 Host 的部署自救口）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(
+        [
+            "--transport",
+            "streamable-http",
+            "--allowed-host",
+            "mem.example.com",
+            "--allowed-host",
+            "cdn.example.org",
+        ]
+    )
+    sec = calls[-1]["transport_security"]
+    assert "mem.example.com:*" in sec.allowed_hosts
+    assert "cdn.example.org:*" in sec.allowed_hosts
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "env.example.com, dns.example.net")
+    mcp_server.main(["--transport", "streamable-http"])
+    sec2 = calls[-1]["transport_security"]
+    assert "env.example.com:*" in sec2.allowed_hosts
+    assert "dns.example.net:*" in sec2.allowed_hosts

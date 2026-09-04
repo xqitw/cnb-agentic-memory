@@ -344,6 +344,17 @@ def parse_host(value: str | None) -> str:
     return stripped or DEFAULT_HOST
 
 
+def parse_allowed_hosts(value: str | None) -> list[str]:
+    """解析额外 Host 白名单（逗号分隔，空/空白返回空列表）。
+
+    用于反代保留真实 Host 域名的部署：把对外域名追加进 DNS rebinding 防护
+    白名单，否则标准反代转发（proxy_set_header Host $host）会被 421 拒绝。
+    """
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def parse_transport(value: str | None) -> str:
     """解析传输协议：空白/大小写/下划线连字符笔误清洗，非法值回落 stdio。
 
@@ -394,6 +405,12 @@ def main(argv: list[str] | None = None) -> None:
         default=parse_port(env("MCP_PORT")),
         help="HTTP 监听端口，仅 sse/streamable-http 有效（默认 8000）",
     )
+    parser.add_argument(
+        "--allowed-host",
+        action="append",
+        default=parse_allowed_hosts(env("MCP_ALLOWED_HOSTS")),
+        help="DNS rebinding 防护额外放行的 Host 白名单（可多次传入，如反代转发的对外域名；环境变量 CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS，逗号分隔）",
+    )
     args = parser.parse_args(argv)
 
     if args.transport != "stdio" and args.host in ("0.0.0.0", "::"):
@@ -409,10 +426,11 @@ def main(argv: list[str] | None = None) -> None:
         mcp.run()
     else:
         # sse / streamable-http：host/port 透传给 MCP 框架的 uvicorn 启动参数。
-        # 框架仅对 localhost 自动开 DNS rebinding 防护，通配监听时显式透传
-        # TransportSecuritySettings 保持防护开启：允许 localhost 族与通配地址
-        # 本身的直连形式（host:* 端口通配），其余 Host 头一律拒绝——严格访问
-        # 控制（真实主机名白名单）由反向代理承担
+        # 框架仅对 localhost 自动开 DNS rebinding 防护，其他监听地址显式透传
+        # TransportSecuritySettings 保持防护常开。白名单 = localhost 族 + 监听
+        # 地址直连形式（IPv6 需方括号，RFC 3986）+ --allowed-host 追加项（反代
+        # 保留真实 Host 域名的部署场景）；Origin 白名单与 Host 白名单同源对齐，
+        # 避免浏览器同源请求被 403。
         from mcp.server.transport_security import TransportSecuritySettings
 
         allowed_hosts = [
@@ -424,9 +442,24 @@ def main(argv: list[str] | None = None) -> None:
         if args.host in ("0.0.0.0", "::"):
             allowed_hosts += ["0.0.0.0:*", "[::]:*"]
         elif args.host:
-            allowed_hosts += [f"{args.host}:*"]
+            # IPv6 直连时 Host 头必带方括号（RFC 3986），模式须同步加方括号
+            pattern = f"[{args.host}]:*" if ":" in args.host else f"{args.host}:*"
+            allowed_hosts += [pattern]
+        # 追加项为纯域名/IP（自动补 :* 端口通配），已含 :* 或方括号 IPv6 的条目原样保留
+        for extra in args.allowed_host:
+            if ":*" in extra:
+                allowed_hosts.append(extra)
+            elif ":" in extra and not extra.startswith("["):
+                allowed_hosts.append(f"[{extra}]:*")
+            else:
+                allowed_hosts.append(f"{extra}:*")
+
         security = TransportSecuritySettings(
-            enable_dns_rebinding_protection=True, allowed_hosts=allowed_hosts
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=allowed_hosts,
+            # 与框架 localhost 自动防护同口径：Origin 白名单随 Host 白名单同源生成，
+            # 否则带 Origin 头的浏览器同源请求会被 403（allowed_origins 空列表 = 全拒）
+            allowed_origins=[f"http://{h}" for h in allowed_hosts],
         )
         mcp.run(
             transport=args.transport,
