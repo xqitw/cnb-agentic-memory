@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from email.message import Message
 from importlib.metadata import PackageNotFoundError, metadata
 from typing import Any, cast
@@ -381,6 +382,15 @@ def main(argv: list[str] | None = None) -> None:
         help="HTTP 监听端口，仅 sse/streamable-http 有效（默认 8000）",
     )
     args = parser.parse_args(argv)
+
+    if args.transport != "stdio" and args.host in ("0.0.0.0", "::"):
+        # HTTP 模式无内置鉴权，且框架对通配地址不自动开 DNS rebinding 防护；
+        # 裸跑公网等于把凭据暴露给任意可达方，启动时显式提醒（不阻断）
+        print(
+            f"警告：HTTP transport 监听通配地址 {args.host} 且无内置鉴权，"
+            "请务必置于反向代理/网关之后（访问控制 + HTTPS + DNS rebinding 防护）再对外暴露",
+            file=sys.stderr,
+        )
 
     if args.transport == "stdio":
         mcp.run()

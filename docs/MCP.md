@@ -107,6 +107,8 @@ cnb-agentic-memory-mcp --transport sse --host 0.0.0.0 --port 8000
 **streamable-http（远程/多用户共享接入，推荐）**：服务端先以 HTTP transport 启动，客户端按 URL 接入；凭据与仓库可经请求头逐请求携带（见上文「请求头覆盖」），无需在服务端配置：
 
 ```bash
+# 注意：0.0.0.0 为通配监听，必须置于反向代理/网关之后（访问控制 + HTTPS）再对外暴露
+# 启动时若监听通配地址，服务会向 stderr 打印提醒
 cnb-agentic-memory-mcp --transport streamable-http --host 0.0.0.0 --port 8000
 ```
 

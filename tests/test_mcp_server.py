@@ -603,3 +603,23 @@ def test_main_transport_env_invalid_does_not_crash(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT", "ws")
     mcp_server.main([])
     assert calls[-1] == {}  # 非法回落 stdio（无参调用）
+
+
+def test_main_wildcard_host_warns(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """HTTP transport 监听通配地址时向 stderr 打安全提醒（复审建议2），stdio/本机地址不提醒。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "streamable-http", "--host", "0.0.0.0"])
+    captured = capsys.readouterr()
+    assert "反向代理" in captured.err
+
+    mcp_server.main(["--transport", "streamable-http", "--host", "127.0.0.1"])
+    captured = capsys.readouterr()
+    assert "反向代理" not in captured.err
+
+    mcp_server.main([])  # stdio 不提醒
+    captured = capsys.readouterr()
+    assert "反向代理" not in captured.err
