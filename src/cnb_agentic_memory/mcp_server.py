@@ -326,6 +326,18 @@ async def memory_keyword_search(
         return json.dumps([_issue_out(i, body_echo=False) for i in issues], ensure_ascii=False)
 
 
+DEFAULT_PORT = 8000  # HTTP transport 默认端口
+
+
+def parse_port(value: str | None) -> int:
+    """解析端口：空/非法/越界回落默认 8000（与 api.parse_timeout 同口径，避免 int('') 崩启动）。"""
+    try:
+        port = int(value) if value else DEFAULT_PORT
+    except ValueError:
+        return DEFAULT_PORT
+    return port if 0 < port < 65536 else DEFAULT_PORT
+
+
 def main(argv: list[str] | None = None) -> None:
     """MCP Server 启动入口（由独立入口 cnb-agentic-memory-mcp 调用）。
 
@@ -352,8 +364,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--port",
-        type=int,
-        default=int(env("MCP_PORT", "8000") or 8000),
+        type=parse_port,
+        default=parse_port(env("MCP_PORT")),
         help="HTTP 监听端口，仅 sse/streamable-http 有效（默认 8000）",
     )
     args = parser.parse_args(argv)

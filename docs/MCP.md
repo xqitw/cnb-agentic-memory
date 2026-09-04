@@ -27,8 +27,9 @@ HTTP transport（`streamable-http`/`sse`）模式下，各工具在**每次调�
 | `X-CNB-Repo` | `CNB_AGENTIC_MEMORY_REPO` | 调用方自己的记忆仓库 slug |
 | `X-CNB-Base-URL` | `CNB_AGENTIC_MEMORY_BASE_URL` | API 地址（私有化部署场景） |
 
-- 头名大小写不敏感；空值/空白视为未提供；非法值静默忽略
-- 未携带头或头未覆盖的配置回落环境变量（与 stdio 行为一致）；stdio 下无请求头，永远走环境变量
+- 头名大小写不敏感；空值/空白视为未提供；重复同名头取首值
+- **安全约定（全有或全无）**：`X-CNB-Token` 与 `X-CNB-Repo` 必须同时出现才启用头覆盖，否则全部头忽略、整体回落环境变量——防止调用方只改 `X-CNB-Base-URL` 时，服务端环境变量的凭据被发送到调用方指定的任意主机
+- 未携带头或凭据不齐时回落环境变量（与 stdio 行为一致）；stdio 下无请求头，永远走环境变量
 - MCP 框架的 stdio 客户端（Claude Desktop 等）不支持自定义请求头，此类客户端沿用环境变量配置
 
 > 安全提示：凭据经由请求头传输，请务必在 HTTPS/反向代理之后暴露服务，避免明文网络截获；头中的 Token 是调用方自己的凭据，服务端仅透传给 CNB API 用于访问对应仓库，不做存储。

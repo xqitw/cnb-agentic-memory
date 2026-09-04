@@ -60,6 +60,15 @@ class ApiError(Exception):
         super().__init__(f"CNB API {status_code}: {message}")
 
 
+def _first_header(lowered: dict[str, list[str]], name: str) -> str | None:
+    """取同名头首个非空值（与 Starlette Headers.get() 首值语义一致，消除重复头二义）。"""
+    values = lowered.get(name) or []
+    for v in values:
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
 def resolve_overrides_from_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
     """从请求头提取每请求配置覆盖（多用户共享部署场景）。
 
@@ -69,23 +78,29 @@ def resolve_overrides_from_headers(headers: Mapping[str, str] | None) -> dict[st
     - ``X-CNB-Repo``：记忆仓库 slug（覆盖 CNB_AGENTIC_MEMORY_REPO）
     - ``X-CNB-Base-URL``：API 地址（覆盖 CNB_AGENTIC_MEMORY_BASE_URL）
 
-    headers 为 None（stdio）或无相关头时返回空 dict，配置回落到
-    环境变量（原行为不变）。空值/空白值视为未提供。
+    安全约定（全有或全无）：凭据头 ``X-CNB-Token`` 与 ``X-CNB-Repo`` 必须同时
+    出现才启用头覆盖模式，否则一律忽略全部头——防止「头只改 base_url」时
+    服务端环境变量的 token/repo 被发送到调用方指定的任意主机（凭据外泄与
+    内网探测面）。空值/空白值视为未提供。
+
+    headers 为 None（stdio）或未启用头模式时返回空 dict，配置回落到
+    环境变量（原行为不变）。
     """
     if not headers:
         return {}
-    # Starlette Headers 大小写不敏感；普通 Mapping 统一小写后查找
-    lowered = {k.lower(): v for k, v in headers.items()}
-    overrides: dict[str, str] = {}
-    for header_name, key in (
-        ("x-cnb-token", "token"),
-        ("x-cnb-repo", "repo"),
-        ("x-cnb-base-url", "base_url"),
-    ):
-        value = lowered.get(header_name) or lowered.get(header_name.removeprefix("x-cnb-"))
-        stripped = value.strip() if isinstance(value, str) else ""
-        if stripped:
-            overrides[key] = stripped
+    # 保留同名头全部值（首值语义在 _first_header 中统一），大小写不敏感
+    lowered: dict[str, list[str]] = {}
+    for k, v in headers.items():
+        lowered.setdefault(k.lower(), []).append(v)
+    token = _first_header(lowered, "x-cnb-token") or _first_header(lowered, "token")
+    repo = _first_header(lowered, "x-cnb-repo") or _first_header(lowered, "repo")
+    if not (token and repo):
+        # 凭据不齐：拒绝进入头模式，避免部分回落组合出危险配置
+        return {}
+    overrides: dict[str, str] = {"token": token, "repo": repo}
+    base_url = _first_header(lowered, "x-cnb-base-url") or _first_header(lowered, "base-url")
+    if base_url:
+        overrides["base_url"] = base_url
     return overrides
 
 

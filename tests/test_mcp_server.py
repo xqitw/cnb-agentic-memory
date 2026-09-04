@@ -503,3 +503,73 @@ def test_tools_use_request_header_config(monkeypatch: pytest.MonkeyPatch) -> Non
     # stdio（ctx=None）：回落环境变量
     asyncio.run(tool.fn(number=1, ctx=None))
     assert seen[-2:] == ["env-token", "g/env-repo"]
+
+
+def test_resolve_overrides_requires_full_credentials() -> None:
+    """安全约定（阻塞项修复）：token+repo 齐备才启用头覆盖，env 凭据不外泄。"""
+    from cnb_agentic_memory.api import resolve_overrides_from_headers
+
+    # 只带 base_url头：拒绝头模式（env token/repo 不会发往头的 base_url）
+    assert resolve_overrides_from_headers({"x-cnb-base-url": "http://evil"}) == {}
+    # 只带 token：同样拒绝（repo 回落 env 会把 env repo 发往头 token 对应平台）
+    assert resolve_overrides_from_headers({"x-cnb-token": "t"}) == {}
+    # token+repo 齐备：启用，base_url 可选覆盖
+    assert resolve_overrides_from_headers(
+        {"x-cnb-token": "t", "x-cnb-repo": "g/r", "x-cnb-base-url": "http://x"}
+    ) == {"token": "t", "repo": "g/r", "base_url": "http://x"}
+    # token+repo 齐备但不带 base_url
+    assert resolve_overrides_from_headers({"x-cnb-token": "t", "x-cnb-repo": "g/r"}) == {
+        "token": "t",
+        "repo": "g/r",
+    }
+
+
+def test_resolve_overrides_duplicate_header_first_value() -> None:
+    """重复同名头取首值（与 Starlette Headers.get() 语义一致）。"""
+    from collections.abc import Mapping
+    from typing import Any
+
+    from cnb_agentic_memory.api import resolve_overrides_from_headers
+
+    class MultiMapping(Mapping):  # 模拟 Starlette Headers：同名头产出多个键值对
+        def __init__(self, pairs: list[tuple[str, str]]) -> None:
+            self._pairs = pairs
+
+        def __getitem__(self, key: str) -> Any:
+            for k, v in self._pairs:
+                if k == key:
+                    return v
+            raise KeyError(key)
+
+        def __iter__(self):
+            return iter(dict(self._pairs))
+
+        def __len__(self) -> int:
+            return len(dict(self._pairs))
+
+        def items(self):
+            return iter(self._pairs)
+
+    dup = MultiMapping([("x-cnb-token", "t1"), ("x-cnb-token", "t2"), ("x-cnb-repo", "g/r")])
+    assert resolve_overrides_from_headers(dup) == {"token": "t1", "repo": "g/r"}
+
+
+def test_parse_port_lenient() -> None:
+    """端口宽松解析：空/非法/越界回落 8000（阻塞评审建议2）。"""
+    from cnb_agentic_memory.mcp_server import parse_port
+
+    assert parse_port(None) == 8000
+    assert parse_port("") == 8000
+    assert parse_port("abc") == 8000
+    assert parse_port("0") == 8000
+    assert parse_port("70000") == 8000
+    assert parse_port("9000") == 9000
+
+
+def test_main_port_env_empty_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MCP_PORT 为空串/非法值时进程不崩，回落 8000。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_PORT", "")
+    mcp_server.main(["--transport", "streamable-http"])
+    assert calls[-1]["port"] == 8000
