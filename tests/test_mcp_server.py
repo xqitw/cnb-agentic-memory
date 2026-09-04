@@ -573,3 +573,33 @@ def test_main_port_env_empty_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_PORT", "")
     mcp_server.main(["--transport", "streamable-http"])
     assert calls[-1]["port"] == 8000
+
+
+def test_parse_transport_lenient() -> None:
+    """transport 环境变量宽松解析：笔误清洗，非法回落 stdio（复审 warning）。"""
+    from cnb_agentic_memory.mcp_server import parse_transport
+
+    assert parse_transport(None) == "stdio"
+    assert parse_transport("") == "stdio"
+    assert parse_transport(" sse") == "sse"
+    assert parse_transport("SSE") == "sse"
+    assert parse_transport("streamable_http") == "streamable-http"
+    assert parse_transport("ws") == "stdio"
+
+
+def test_main_transport_env_invalid_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MCP_TRANSPORT 异常值不崩启动：空白/大小写/下划线清洗后生效，非法回落 stdio。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT", " sse")
+    mcp_server.main([])
+    assert calls[-1] == {"transport": "sse", "host": "127.0.0.1", "port": 8000}
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT", "streamable_http")
+    mcp_server.main([])
+    assert calls[-1]["transport"] == "streamable-http"
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT", "ws")
+    mcp_server.main([])
+    assert calls[-1] == {}  # 非法回落 stdio（无参调用）

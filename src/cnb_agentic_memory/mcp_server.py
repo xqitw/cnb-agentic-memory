@@ -328,6 +328,18 @@ async def memory_keyword_search(
 
 DEFAULT_PORT = 8000  # HTTP transport 默认端口
 
+_TRANSPORTS = ("stdio", "sse", "streamable-http")
+
+
+def parse_transport(value: str | None) -> str:
+    """解析传输协议：空白/大小写/下划线连字符笔误清洗，非法值回落 stdio。
+
+    argparse choices 只校验命令行值、不校验 default，环境变量的异常值若不
+    清洗会穿透到框架 MCPServer.run() 抛 ValueError 使服务启动即崩。
+    """
+    normalized = (value or "").strip().lower().replace("_", "-")
+    return normalized if normalized in _TRANSPORTS else "stdio"
+
 
 def parse_port(value: str | None) -> int:
     """解析端口：空/非法/越界回落默认 8000（与 api.parse_timeout 同口径，避免 int('') 崩启动）。"""
@@ -354,7 +366,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--transport",
         choices=("stdio", "sse", "streamable-http"),
-        default=env("MCP_TRANSPORT", "stdio"),
+        default=parse_transport(env("MCP_TRANSPORT")),
         help="传输协议（默认 stdio；环境变量 CNB_AGENTIC_MEMORY_MCP_TRANSPORT）",
     )
     parser.add_argument(
