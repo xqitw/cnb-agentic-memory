@@ -6,20 +6,23 @@
 - 工具描述内嵌使用指导（title 撰写规范等），供智能体理解调用方式
 - 错误处理：ApiError/MemoryRuleError 转为带错误说明的结果文本（isError），
   不包装语义，智能体收到后自行决策重试或降级
-- 配置统一 CNB_AGENTIC_MEMORY_ 环境变量（CNB_AGENTIC_MEMORY_TOKEN/CNB_AGENTIC_MEMORY_REPO/CNB_AGENTIC_MEMORY_BASE_URL/CNB_AGENTIC_MEMORY_TIMEOUT）
+- 配置优先级：请求头（X-CNB-Token/X-CNB-Repo/X-CNB-Base-URL，多用户共享部署时
+  每请求覆盖）> CNB_AGENTIC_MEMORY_ 环境变量；stdio 下无请求头，自然回落环境变量
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from email.message import Message
 from importlib.metadata import PackageNotFoundError, metadata
 from typing import Any, cast
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.context import Context
 
 from . import __version__
-from .api import CNBApiClient
+from .api import CNBApiClient, build_client_from_headers, env
 from .memory import Memory, MemoryRuleError, SearchResult, WriteResult
 
 _DIST_NAME = "cnb-agentic-memory"  # PyPI 发行名（pyproject [project].name 同源）
@@ -100,6 +103,16 @@ mcp = MCPServer(
 )
 
 
+def _client(ctx: Context | None) -> CNBApiClient:
+    """按本次请求构造 CNBApiClient：请求头配置优先，回落环境变量（见 api.build_client_from_headers）。
+
+    MCP 框架对标注 Context 的参数自动注入请求上下文（不进入工具 Schema），
+    ctx.headers 在 sse/streamable-http 下为该次 HTTP 请求头，stdio 下为 None
+    （无请求头 → 配置回落环境变量，与历史行为一致）。
+    """
+    return build_client_from_headers(ctx.headers if ctx is not None else None)
+
+
 def _write_out(result: WriteResult) -> dict:
     """WriteResult 的输出形状（parts 供超长拆分循迹）。"""
     return {
@@ -157,6 +170,7 @@ async def memory_write(
     title: str | None = None,
     tags: list[str] | None = None,
     category: str | None = None,
+    ctx: Context | None = None,
 ) -> str:
     """写入记忆。category 自动补 category: 前缀（CNB 分类约定），tags 为普通标签。
 
@@ -164,7 +178,7 @@ async def memory_write(
     携带已落盘分片编号，供智能体循迹处理孤儿分片。
     """
     try:
-        async with CNBApiClient() as client:
+        async with _client(ctx) as client:
             result = await Memory(client).write(content, title=title, tags=tags, category=category)
             return json.dumps(_write_out(result), ensure_ascii=False)
     except MemoryRuleError as err:
@@ -172,9 +186,9 @@ async def memory_write(
 
 
 @mcp.tool(description="按编号精确读取记忆原文（正文 Markdown）")
-async def memory_get(number: int) -> str:
+async def memory_get(number: int, ctx: Context | None = None) -> str:
     """读取记忆。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         issue = await Memory(client).get(number)
         return json.dumps(_issue_out(issue), ensure_ascii=False)
 
@@ -193,9 +207,10 @@ async def memory_update(
     title: str | None = None,
     tags: list[str] | None = None,
     category: str | None = None,
+    ctx: Context | None = None,
 ) -> str:
     """更新记忆。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         issue = await Memory(client).update(
             number, content=content, title=title, tags=tags, category=category
         )
@@ -203,9 +218,9 @@ async def memory_update(
 
 
 @mcp.tool(description="向记忆追加一条更新记录（进知识库，可被语义检索）")
-async def memory_append(number: int, note: str) -> str:
+async def memory_append(number: int, note: str, ctx: Context | None = None) -> str:
     """追加更新记录。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         comment = await Memory(client).append(number, note)
         return json.dumps(
             {"id": comment.id, "body": comment.body, "created_at": comment.created_at},
@@ -220,17 +235,17 @@ async def memory_append(number: int, note: str) -> str:
         "修正/补充记忆请用 memory_update，本工具仅用于真正废弃。"
     )
 )
-async def memory_delete(number: int) -> str:
+async def memory_delete(number: int, ctx: Context | None = None) -> str:
     """软删除记忆。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         issue = await Memory(client).delete(number)
         return json.dumps({"number": issue.number, "state": issue.state}, ensure_ascii=False)
 
 
 @mcp.tool(description="恢复软删除的记忆")
-async def memory_restore(number: int) -> str:
+async def memory_restore(number: int, ctx: Context | None = None) -> str:
     """恢复记忆。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         issue = await Memory(client).restore(number)
         return json.dumps({"number": issue.number, "state": issue.state}, ensure_ascii=False)
 
@@ -247,11 +262,12 @@ async def memory_list(
     tags: list[str] | None = None,
     state: str = "open",
     limit: int = 20,
+    ctx: Context | None = None,
 ) -> str:
     """过滤记忆列表。state 仅支持 open/closed（CNB API 不支持 all）。"""
     if state not in ("open", "closed"):
         return json.dumps({"error": "state 仅支持 open/closed（CNB API 不支持 all）"}, ensure_ascii=False)
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         issues = await Memory(client).list(
             category=category, tags=tags, state=state, limit=max(1, min(limit, 100))
         )
@@ -259,9 +275,9 @@ async def memory_list(
 
 
 @mcp.tool(description="最近更新的记忆")
-async def memory_list_recent(limit: int = 5) -> str:
+async def memory_list_recent(limit: int = 5, ctx: Context | None = None) -> str:
     """最近记忆。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         issues = await Memory(client).list_recent(limit=max(1, min(limit, 100)))
         return json.dumps([_issue_out(i) for i in issues], ensure_ascii=False)
 
@@ -277,9 +293,10 @@ async def memory_search(
     query: str,
     top_k: int = 5,
     include_closed: bool = False,
+    ctx: Context | None = None,
 ) -> str:
     """语义检索记忆。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         results = await Memory(client).search(
             query, top_k=max(1, min(top_k, 100)), include_closed=include_closed
         )
@@ -299,18 +316,53 @@ async def memory_keyword_search(
     query: str,
     limit: int = 20,
     include_closed: bool = False,
+    ctx: Context | None = None,
 ) -> str:
     """关键词标题检索记忆。"""
-    async with CNBApiClient() as client:
+    async with _client(ctx) as client:
         issues = await Memory(client).keyword_search(
             query, limit=max(1, min(limit, 100)), include_closed=include_closed
         )
         return json.dumps([_issue_out(i, body_echo=False) for i in issues], ensure_ascii=False)
 
 
-def main() -> None:
-    """MCP Server 启动入口（由独立入口 cnb-agentic-memory-mcp 调用）。"""
-    mcp.run()
+def main(argv: list[str] | None = None) -> None:
+    """MCP Server 启动入口（由独立入口 cnb-agentic-memory-mcp 调用）。
+
+    支持 stdio / sse / streamable-http 三种 transport（默认 stdio，与
+    历史行为一致）：stdio 供客户端以子进程方式拉起；sse 与
+    streamable-http 供远程接入，监听 --host/--port，路径由 MCP 框架
+    固定（SSE: /sse + /messages/，streamable-http: /mcp）。
+    CLI 参数优先，环境变量兜底（沿用 CNB_AGENTIC_MEMORY_ 前缀）。
+    """
+    parser = argparse.ArgumentParser(
+        prog="cnb-agentic-memory-mcp",
+        description="CNB Issue 智能体记忆 MCP Server",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "sse", "streamable-http"),
+        default=env("MCP_TRANSPORT", "stdio"),
+        help="传输协议（默认 stdio；环境变量 CNB_AGENTIC_MEMORY_MCP_TRANSPORT）",
+    )
+    parser.add_argument(
+        "--host",
+        default=env("MCP_HOST", "127.0.0.1"),
+        help="HTTP 监听地址，仅 sse/streamable-http 有效（默认 127.0.0.1）",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(env("MCP_PORT", "8000") or 8000),
+        help="HTTP 监听端口，仅 sse/streamable-http 有效（默认 8000）",
+    )
+    args = parser.parse_args(argv)
+
+    if args.transport == "stdio":
+        mcp.run()
+    else:
+        # sse / streamable-http：host/port 透传给 MCP 框架的 uvicorn 启动参数
+        mcp.run(transport=args.transport, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

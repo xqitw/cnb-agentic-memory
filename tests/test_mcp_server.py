@@ -387,3 +387,119 @@ def test_keyword_search_rejects_empty(monkeypatch):
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_keyword_search")
     with pytest.raises(Exception, match="检索词不能为空"):
         asyncio.run(tool.fn(query="   "))
+
+
+def test_main_transport_cli_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--transport CLI 参数优先于环境变量；非法 transport 报 SystemExit。"""
+    calls: list[tuple] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append((a, kw)))
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT", "sse")
+
+    # CLI 参数优先：环境变量是 sse，CLI 指定 streamable-http
+    mcp_server.main(["--transport", "streamable-http", "--port", "9123"])
+    assert calls[-1] == (
+        (),
+        {"transport": "streamable-http", "host": "127.0.0.1", "port": 9123},
+    )
+
+    # 仅环境变量时生效
+    mcp_server.main([])
+    assert calls[-1] == ((), {"transport": "sse", "host": "127.0.0.1", "port": 8000})
+
+    # 无参数无环境变量 = stdio（历史默认行为，无参调用）
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT")
+    mcp_server.main([])
+    assert calls[-1] == ((), {})
+
+    # 非法值由 argparse 拒绝（exit 2）
+    with pytest.raises(SystemExit) as exc_info:
+        mcp_server.main(["--transport", "ws"])
+    assert exc_info.value.code == 2
+
+
+# ---- 每请求配置（多用户共享部署）----
+
+
+def test_resolve_overrides_from_headers() -> None:
+    """X-CNB-* 头提取每请求覆盖；大小写不敏感；空值/无关头忽略。"""
+    from cnb_agentic_memory.api import resolve_overrides_from_headers
+
+    # 全量头（Starlette Headers 风格，小写）
+    assert resolve_overrides_from_headers(
+        {"x-cnb-token": " t1 ", "x-cnb-repo": "g/r", "x-cnb-base-url": "https://x.example"}
+    ) == {"token": "t1", "repo": "g/r", "base_url": "https://x.example"}
+    # 原始大小写形式
+    assert resolve_overrides_from_headers({"X-CNB-Token": "t2", "X-CNB-Repo": "g/r2"}) == {
+        "token": "t2",
+        "repo": "g/r2",
+    }
+    # 空值/纯空白视为未提供
+    assert resolve_overrides_from_headers({"x-cnb-token": "  "}) == {}
+    # 无关头不进入覆盖
+    assert resolve_overrides_from_headers({"authorization": "Bearer x", "x-other": "y"}) == {}
+    # None（stdio）回落空覆盖
+    assert resolve_overrides_from_headers(None) == {}
+
+
+def test_build_client_from_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """头覆盖优先，未覆盖项回落环境变量；无头时与 CNBApiClient() 等价。"""
+    from cnb_agentic_memory.api import build_client_from_headers
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "env-token")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/env-repo")
+
+    # 无头 → 纯环境变量（历史行为）
+    client = build_client_from_headers(None)
+    assert client.token == "env-token"
+    assert client.repo == "g/env-repo"
+
+    # 头覆盖 token/repo，base_url 仍回落环境变量
+    client = build_client_from_headers({"x-cnb-token": "hdr-token", "x-cnb-repo": "g/hdr-repo"})
+    assert client.token == "hdr-token"
+    assert client.repo == "g/hdr-repo"
+
+    # 空白头值不覆盖（回落环境变量）
+    client = build_client_from_headers({"x-cnb-token": "   "})
+    assert client.token == "env-token"
+
+
+def test_tools_use_request_header_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTTP 场景：工具调用经 ctx.headers 使用请求头里的 token/repo（用户间互不影响）。"""
+    import asyncio
+
+    from cnb_agentic_memory.models import Issue
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "env-token")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/env-repo")
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
+    seen: list[str] = []
+
+    class FakeContext:
+        """模拟 MCP Context：仅暴露 headers 属性（_client 只读 headers）。"""
+
+        def __init__(self, headers: dict) -> None:
+            self.headers = headers
+
+    async def fake_get_issue(self, number: int):
+        seen.append(self.token)
+        seen.append(self.repo)
+        # Memory.get 返回 Issue 模型（_issue_out 按属性访问）
+        return Issue.model_validate(issue_payload(number, "t"))
+
+    monkeypatch.setattr("cnb_agentic_memory.api.CNBApiClient.get_issue", fake_get_issue)
+
+    # 带凭据头：使用头中的 token/repo
+    ctx_hdr = FakeContext({"x-cnb-token": "hdr-token", "x-cnb-repo": "g/hdr-repo"})
+    data = json.loads(asyncio.run(tool.fn(number=1, ctx=ctx_hdr)))
+    assert data["number"] == 1
+    assert seen[-2:] == ["hdr-token", "g/hdr-repo"]
+
+    # 不带凭据头：回落环境变量
+    ctx_bare = FakeContext({})
+    asyncio.run(tool.fn(number=1, ctx=ctx_bare))
+    assert seen[-2:] == ["env-token", "g/env-repo"]
+
+    # stdio（ctx=None）：回落环境变量
+    asyncio.run(tool.fn(number=1, ctx=None))
+    assert seen[-2:] == ["env-token", "g/env-repo"]

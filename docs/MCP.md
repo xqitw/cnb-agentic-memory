@@ -17,9 +17,56 @@ pip install "cnb-agentic-memory[mcp]"
 | `CNB_AGENTIC_MEMORY_BASE_URL` | API 地址，默认 `https://api.cnb.cool` |
 | `CNB_AGENTIC_MEMORY_TIMEOUT` | 请求超时秒数，默认 30 |
 
+### 请求头覆盖（多用户共享部署）
+
+HTTP transport（`streamable-http`/`sse`）模式下，各工具在**每次调用时**读取以下请求头，可逐请求覆盖 token/repo 等配置，实现多用户共用一个 MCP 服务实例、各用各的凭据与仓库、互不影响：
+
+| 请求头 | 覆盖的环境变量 | 说明 |
+| --- | --- | --- |
+| `X-CNB-Token` | `CNB_AGENTIC_MEMORY_TOKEN` | 调用方自己的 CNB API Token |
+| `X-CNB-Repo` | `CNB_AGENTIC_MEMORY_REPO` | 调用方自己的记忆仓库 slug |
+| `X-CNB-Base-URL` | `CNB_AGENTIC_MEMORY_BASE_URL` | API 地址（私有化部署场景） |
+
+- 头名大小写不敏感；空值/空白视为未提供；非法值静默忽略
+- 未携带头或头未覆盖的配置回落环境变量（与 stdio 行为一致）；stdio 下无请求头，永远走环境变量
+- MCP 框架的 stdio 客户端（Claude Desktop 等）不支持自定义请求头，此类客户端沿用环境变量配置
+
+> 安全提示：凭据经由请求头传输，请务必在 HTTPS/反向代理之后暴露服务，避免明文网络截获；头中的 Token 是调用方自己的凭据，服务端仅透传给 CNB API 用于访问对应仓库，不做存储。
+
+## 传输协议（transport）
+
+支持三种 MCP 传输协议，通过 CLI 参数或环境变量选择（CLI 参数优先）：
+
+| transport | 启动方式 | 端点 | 适用场景 |
+| --- | --- | --- | --- |
+| `stdio`（默认） | 无参数，客户端以子进程拉起 | 标准输入/输出 | 本地客户端（Claude Desktop、CNB AI 助手等） |
+| `streamable-http` | `--transport streamable-http` | `http://<host>:<port>/mcp` | 远程/共享接入（推荐） |
+| `sse` | `--transport sse` | `http://<host>:<port>/sse`（消息回传 `/messages/`） | 仅支持旧版 SSE 的远程客户端 |
+
+```bash
+# stdio（默认，历史行为不变）
+cnb-agentic-memory-mcp
+
+# streamable-http：监听 0.0.0.0:8000，端点 /mcp
+cnb-agentic-memory-mcp --transport streamable-http --host 0.0.0.0 --port 8000
+
+# sse：监听 0.0.0.0:8000，端点 /sse
+cnb-agentic-memory-mcp --transport sse --host 0.0.0.0 --port 8000
+```
+
+| 参数 | 环境变量兜底 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `--transport` | `CNB_AGENTIC_MEMORY_MCP_TRANSPORT` | `stdio` | 传输协议：`stdio` / `sse` / `streamable-http` |
+| `--host` | `CNB_AGENTIC_MEMORY_MCP_HOST` | `127.0.0.1` | HTTP 监听地址，仅 sse/streamable-http 有效；对外暴露时用 `0.0.0.0` |
+| `--port` | `CNB_AGENTIC_MEMORY_MCP_PORT` | `8000` | HTTP 监听端口，仅 sse/streamable-http 有效 |
+
+> 安全提示：HTTP transport 无内置鉴权，务必配合反向代理/网关做访问控制与
+> Token 校验后再对外暴露，避免 `CNB_AGENTIC_MEMORY_TOKEN` 凭据被任意调用方
+> 间接使用。
+
 ## 客户端接入
 
-**推荐：uvx 方式运行**（无需预装，uv 自动拉取包并执行）。`--from` 用于声明 `[mcp]` extra（MCP 依赖在 extra 中，无法随默认安装带上）：
+**stdio（本地子进程）——推荐：uvx 方式运行**（无需预装，uv 自动拉取包并执行）。`--from` 用于声明 `[mcp]` extra（MCP 依赖在 extra 中，无法随默认安装带上）：
 
 ```json
 {
@@ -55,6 +102,52 @@ pip install "cnb-agentic-memory[mcp]"
   }
 }
 ```
+
+**streamable-http（远程/多用户共享接入，推荐）**：服务端先以 HTTP transport 启动，客户端按 URL 接入；凭据与仓库可经请求头逐请求携带（见上文「请求头覆盖」），无需在服务端配置：
+
+```bash
+cnb-agentic-memory-mcp --transport streamable-http --host 0.0.0.0 --port 8000
+```
+
+客户端配置示例（`headers` 字段为 Cursor/VS Code/Claude Code 等主流 MCP 客户端通用写法，随每次工具调用发送）：
+
+```json
+{
+  "mcpServers": {
+    "cnb-agentic-memory": {
+      "url": "http://127.0.0.1:8000/mcp",
+      "headers": {
+        "X-CNB-Token": "<调用方自己的token>",
+        "X-CNB-Repo": "group/memory"
+      }
+    }
+  }
+}
+```
+
+同一服务实例上不同用户各配各的 `headers`（token 与 repo 都可以不同），互不影响；不配置 `headers` 的客户端则使用服务端环境变量。
+
+用 Python MCP 客户端接入时，通过自定义 `httpx2.AsyncClient` 携带请求头（示例已实测）：
+
+```python
+import httpx2
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
+headers = {"X-CNB-Token": "<token>", "X-CNB-Repo": "group/memory"}
+async with httpx2.AsyncClient(headers=headers) as http_client:
+    async with streamable_http_client(
+        "http://127.0.0.1:8000/mcp", http_client=http_client
+    ) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool("memory_get", {"number": 1})
+```
+
+原始 HTTP 调用（curl 等）同理：`X-CNB-*` 就是普通 HTTP 请求头，按 MCP 协议流程
+（initialize 获取 `Mcp-Session-Id` 后携带调用）发送即可。
+
+**sse（旧版远程客户端）**：服务端以 `--transport sse` 启动，客户端 URL 为 `http://<host>:<port>/sse`，headers 配置方式与 streamable-http 相同。
 
 ## 工具清单（10 个）
 

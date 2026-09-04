@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
@@ -57,6 +58,47 @@ class ApiError(Exception):
         self.status_code = status_code
         self.message = message
         super().__init__(f"CNB API {status_code}: {message}")
+
+
+def resolve_overrides_from_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
+    """从请求头提取每请求配置覆盖（多用户共享部署场景）。
+
+    支持的头（大小写不敏感，``x-cnb-`` 前缀可省略）：
+
+    - ``X-CNB-Token``：CNB API Token（覆盖 CNB_AGENTIC_MEMORY_TOKEN）
+    - ``X-CNB-Repo``：记忆仓库 slug（覆盖 CNB_AGENTIC_MEMORY_REPO）
+    - ``X-CNB-Base-URL``：API 地址（覆盖 CNB_AGENTIC_MEMORY_BASE_URL）
+
+    headers 为 None（stdio）或无相关头时返回空 dict，配置回落到
+    环境变量（原行为不变）。空值/空白值视为未提供。
+    """
+    if not headers:
+        return {}
+    # Starlette Headers 大小写不敏感；普通 Mapping 统一小写后查找
+    lowered = {k.lower(): v for k, v in headers.items()}
+    overrides: dict[str, str] = {}
+    for header_name, key in (
+        ("x-cnb-token", "token"),
+        ("x-cnb-repo", "repo"),
+        ("x-cnb-base-url", "base_url"),
+    ):
+        value = lowered.get(header_name) or lowered.get(header_name.removeprefix("x-cnb-"))
+        stripped = value.strip() if isinstance(value, str) else ""
+        if stripped:
+            overrides[key] = stripped
+    return overrides
+
+
+def build_client_from_headers(headers: Mapping[str, str] | None) -> CNBApiClient:
+    """按请求头构造客户端：头覆盖优先，其余配置回落环境变量（原行为）。"""
+    overrides = resolve_overrides_from_headers(headers)
+    if not overrides:
+        return CNBApiClient()
+    return CNBApiClient(
+        token=overrides.get("token"),
+        repo=overrides.get("repo"),
+        base_url=overrides.get("base_url"),
+    )
 
 
 class CNBApiClient:
