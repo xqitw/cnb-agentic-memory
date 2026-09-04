@@ -331,6 +331,18 @@ DEFAULT_PORT = 8000  # HTTP transport 默认端口
 
 _TRANSPORTS = ("stdio", "sse", "streamable-http")
 
+DEFAULT_HOST = "127.0.0.1"
+
+
+def parse_host(value: str | None) -> str:
+    """解析监听地址：键存在但值为空（容器编排常见）回落 127.0.0.1。
+
+    空串透传 uvicorn 会绑定全部网卡（等效 0.0.0.0），却绕过通配安全提醒，
+    故与 parse_transport/parse_port 同口径清洗。
+    """
+    stripped = (value or "").strip()
+    return stripped or DEFAULT_HOST
+
 
 def parse_transport(value: str | None) -> str:
     """解析传输协议：空白/大小写/下划线连字符笔误清洗，非法值回落 stdio。
@@ -372,7 +384,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--host",
-        default=env("MCP_HOST", "127.0.0.1"),
+        type=parse_host,
+        default=parse_host(env("MCP_HOST")),
         help="HTTP 监听地址，仅 sse/streamable-http 有效（默认 127.0.0.1）",
     )
     parser.add_argument(
@@ -395,8 +408,32 @@ def main(argv: list[str] | None = None) -> None:
     if args.transport == "stdio":
         mcp.run()
     else:
-        # sse / streamable-http：host/port 透传给 MCP 框架的 uvicorn 启动参数
-        mcp.run(transport=args.transport, host=args.host, port=args.port)
+        # sse / streamable-http：host/port 透传给 MCP 框架的 uvicorn 启动参数。
+        # 框架仅对 localhost 自动开 DNS rebinding 防护，通配监听时显式透传
+        # TransportSecuritySettings 保持防护开启：允许 localhost 族与通配地址
+        # 本身的直连形式（host:* 端口通配），其余 Host 头一律拒绝——严格访问
+        # 控制（真实主机名白名单）由反向代理承担
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        allowed_hosts = [
+            "localhost:*",
+            "127.0.0.1:*",
+            "[::1]:*",
+            "[::ffff:127.0.0.1]:*",
+        ]
+        if args.host in ("0.0.0.0", "::"):
+            allowed_hosts += ["0.0.0.0:*", "[::]:*"]
+        elif args.host:
+            allowed_hosts += [f"{args.host}:*"]
+        security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True, allowed_hosts=allowed_hosts
+        )
+        mcp.run(
+            transport=args.transport,
+            host=args.host,
+            port=args.port,
+            transport_security=security,
+        )
 
 
 if __name__ == "__main__":

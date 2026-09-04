@@ -58,7 +58,7 @@ cnb-agentic-memory-mcp --transport sse --host 0.0.0.0 --port 8000
 | 参数 | 环境变量兜底 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `--transport` | `CNB_AGENTIC_MEMORY_MCP_TRANSPORT` | `stdio` | 传输协议：`stdio` / `sse` / `streamable-http` |
-| `--host` | `CNB_AGENTIC_MEMORY_MCP_HOST` | `127.0.0.1` | HTTP 监听地址，仅 sse/streamable-http 有效；对外暴露时用 `0.0.0.0` |
+| `--host` | `CNB_AGENTIC_MEMORY_MCP_HOST` | `127.0.0.1` | HTTP 监听地址，仅 sse/streamable-http 有效；空值/空白回落默认；对外暴露时用 `0.0.0.0`（须置于反代之后） |
 | `--port` | `CNB_AGENTIC_MEMORY_MCP_PORT` | `8000` | HTTP 监听端口，仅 sse/streamable-http 有效 |
 
 > 安全提示：HTTP transport 无内置鉴权，务必配合反向代理/网关做访问控制与

@@ -399,12 +399,19 @@ def test_main_transport_cli_overrides_env(monkeypatch: pytest.MonkeyPatch) -> No
     mcp_server.main(["--transport", "streamable-http", "--port", "9123"])
     assert calls[-1] == (
         (),
-        {"transport": "streamable-http", "host": "127.0.0.1", "port": 9123},
+        {
+            "transport": "streamable-http",
+            "host": "127.0.0.1",
+            "port": 9123,
+            "transport_security": calls[-1][1]["transport_security"],
+        },
     )
 
-    # 仅环境变量时生效
+    # 仅环境变量时生效（transport_security 为防护透传，断言防护开启即可）
     mcp_server.main([])
-    assert calls[-1] == ((), {"transport": "sse", "host": "127.0.0.1", "port": 8000})
+    assert calls[-1][1]["transport"] == "sse"
+    assert calls[-1][1]["port"] == 8000
+    assert calls[-1][1]["transport_security"].enable_dns_rebinding_protection is True
 
     # 无参数无环境变量 = stdio（历史默认行为，无参调用）
     monkeypatch.delenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT")
@@ -594,7 +601,10 @@ def test_main_transport_env_invalid_does_not_crash(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT", " sse")
     mcp_server.main([])
-    assert calls[-1] == {"transport": "sse", "host": "127.0.0.1", "port": 8000}
+    assert calls[-1]["transport"] == "sse"
+    assert calls[-1]["host"] == "127.0.0.1"
+    assert calls[-1]["port"] == 8000
+    assert calls[-1]["transport_security"].enable_dns_rebinding_protection is True
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_TRANSPORT", "streamable_http")
     mcp_server.main([])
@@ -623,3 +633,65 @@ def test_main_wildcard_host_warns(
     mcp_server.main([])  # stdio 不提醒
     captured = capsys.readouterr()
     assert "反向代理" not in captured.err
+
+
+def test_parse_host_lenient() -> None:
+    """host 宽松解析：空值/空白回落 127.0.0.1（复审 warning1：MCP_HOST 空串绑定全网卡且警告失效）。"""
+    from cnb_agentic_memory.mcp_server import parse_host
+
+    assert parse_host(None) == "127.0.0.1"
+    assert parse_host("") == "127.0.0.1"
+    assert parse_host("  ") == "127.0.0.1"
+    assert parse_host("0.0.0.0") == "0.0.0.0"
+
+
+def test_main_empty_host_env_falls_back(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """MCP_HOST 键存在值为空：回落 127.0.0.1 且不触发通配警告（复审复现场景）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "")
+    mcp_server.main(["--transport", "streamable-http"])
+    captured = capsys.readouterr()
+    assert calls[-1]["host"] == "127.0.0.1"
+    assert "反向代理" not in captured.err  # 非 0.0.0.0，不误报
+
+
+def test_dns_rebinding_protection_passed_on_wildcard(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """通配监听时透传 TransportSecuritySettings（复审 info：防护与警告对齐）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "streamable-http", "--host", "0.0.0.0"])
+    captured = capsys.readouterr()
+    security = calls[-1]["transport_security"]
+    assert security.enable_dns_rebinding_protection is True
+    assert "127.0.0.1:*" in security.allowed_hosts
+    assert "0.0.0.0:*" in security.allowed_hosts
+    assert "反向代理" in captured.err  # 通配警告保留
+
+    # 本机监听同样透传（防护常开），但不触发通配警告
+    mcp_server.main(["--transport", "streamable-http", "--host", "127.0.0.1"])
+    captured = capsys.readouterr()
+    assert calls[-1]["transport_security"].enable_dns_rebinding_protection is True
+    assert "反向代理" not in captured.err
+
+
+def test_env_var_names_documented_correctly() -> None:
+    """守护：help 文本中的环境变量名与 env() 实际读取一致（复审 warning2 防回归）。"""
+    import inspect
+
+    src = inspect.getsource(mcp_server.main)
+    # env() 自动加前缀：源码用短名，实际读取的完整变量名 = 前缀 + 短名，与 help/docs 声明一致
+    assert 'env("MCP_TRANSPORT")' in src
+    assert 'env("MCP_HOST")' in src
+    assert 'env("MCP_PORT")' in src
+    # help 文本向用户展示完整变量名
+    assert "CNB_AGENTIC_MEMORY_MCP_TRANSPORT" in src
+    docs = open("docs/MCP.md").read()
+    assert "CNB_AGENTIC_MEMORY_MCP_TRANSPORT" in docs
+    assert "CNB_AGENTIC_MEMORY_MCP_HOST" in docs
+    assert "CNB_AGENTIC_MEMORY_MCP_PORT" in docs
