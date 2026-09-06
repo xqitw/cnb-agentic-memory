@@ -751,3 +751,39 @@ def test_allowed_host_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
     sec2 = calls[-1]["transport_security"]
     assert "env.example.com:*" in sec2.allowed_hosts
     assert "dns.example.net:*" in sec2.allowed_hosts
+
+
+def test_resolve_overrides_rejects_bare_header_names() -> None:
+    """仅认 X-CNB-* 完整头名：裸 token/repo/base-url 别名一律忽略（防通用头名冲突）。"""
+    from cnb_agentic_memory.api import resolve_overrides_from_headers
+
+    # 裸别名即使 token/repo 齐全也不进入头覆盖模式
+    assert resolve_overrides_from_headers({"token": "t", "repo": "g/r"}) == {}
+    # 裸别名不与 X-CNB-* 头混用（base-url 别名无效）
+    assert resolve_overrides_from_headers(
+        {"x-cnb-token": "t", "x-cnb-repo": "g/r", "base-url": "https://x.example"}
+    ) == {"token": "t", "repo": "g/r"}
+
+
+def test_main_invalid_cli_port_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI 显式传非法端口直接报错退出（exit 2），不静默回落 8000。"""
+    for bad in ("abc", "0", "70000"):
+        with pytest.raises(SystemExit) as exc_info:
+            mcp_server.main(["--transport", "streamable-http", "--port", bad])
+        assert exc_info.value.code == 2
+
+
+def test_allowed_host_default_not_mutated_across_parses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--allowed-host 的 default 不可被 append 原地累积：多次 parse_args 互不污染。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "env.example.com")
+
+    # 第一次带 CLI 追加，第二次不带：env 白名单不得残留第一次的追加项
+    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "cli.example.com"])
+    mcp_server.main(["--transport", "streamable-http"])
+    sec = calls[-1]["transport_security"]
+    assert "env.example.com:*" in sec.allowed_hosts
+    assert "cli.example.com:*" not in sec.allowed_hosts

@@ -366,12 +366,30 @@ def parse_transport(value: str | None) -> str:
 
 
 def parse_port(value: str | None) -> int:
-    """解析端口：空/非法/越界回落默认 8000（与 api.parse_timeout 同口径，避免 int('') 崩启动）。"""
+    """解析端口：空/非法/越界回落默认 8000（与 api.parse_timeout 同口径，避免 int('') 崩启动）。
+
+    仅供环境变量兜底使用；CLI 显式传参走 parse_port_strict，非法值直接报错。
+    """
     try:
         port = int(value) if value else DEFAULT_PORT
     except ValueError:
         return DEFAULT_PORT
     return port if 0 < port < 65536 else DEFAULT_PORT
+
+
+def parse_port_strict(value: str) -> int:
+    """CLI 端口严格校验：非法/越界直接报 argparse 错误退出（exit 2），不静默回落。
+
+    环境变量的异常值静默回落是启动健壮性防御；用户显式敲错命令行参数则
+    应立即暴露，静默改用 8000 会造成「服务起在了意外端口」的困惑。
+    """
+    try:
+        port = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"端口必须是整数：{value!r}") from None
+    if not 0 < port < 65536:
+        raise argparse.ArgumentTypeError(f"端口须在 1~65535 之间：{value!r}")
+    return port
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -401,14 +419,16 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--port",
-        type=parse_port,
+        type=parse_port_strict,
         default=parse_port(env("MCP_PORT")),
         help="HTTP 监听端口，仅 sse/streamable-http 有效（默认 8000）",
     )
     parser.add_argument(
         "--allowed-host",
         action="append",
-        default=parse_allowed_hosts(env("MCP_ALLOWED_HOSTS")),
+        # 拷贝一份再追加：action="append" 会原地修改 default，多次 parse_args
+        # 时 env 解析出的白名单会跨调用累积
+        default=list(parse_allowed_hosts(env("MCP_ALLOWED_HOSTS"))),
         help="DNS rebinding 防护额外放行的 Host 白名单（可多次传入，如反代转发的对外域名；环境变量 CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS，逗号分隔）",
     )
     args = parser.parse_args(argv)

@@ -72,11 +72,14 @@ def _first_header(lowered: dict[str, list[str]], name: str) -> str | None:
 def resolve_overrides_from_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
     """从请求头提取每请求配置覆盖（多用户共享部署场景）。
 
-    支持的头（大小写不敏感，``x-cnb-`` 前缀可省略）：
+    支持的头（大小写不敏感）：
 
     - ``X-CNB-Token``：CNB API Token（覆盖 CNB_AGENTIC_MEMORY_TOKEN）
     - ``X-CNB-Repo``：记忆仓库 slug（覆盖 CNB_AGENTIC_MEMORY_REPO）
     - ``X-CNB-Base-URL``：API 地址（覆盖 CNB_AGENTIC_MEMORY_BASE_URL）
+
+    仅认 ``X-CNB-`` 完整头名，不提供裸 ``token``/``repo`` 等别名：
+    通用头名易与其他代理/网关注入的头冲突，意外进入头覆盖模式。
 
     安全约定（全有或全无）：凭据头 ``X-CNB-Token`` 与 ``X-CNB-Repo`` 必须同时
     出现才启用头覆盖模式，否则一律忽略全部头——防止「头只改 base_url」时
@@ -92,13 +95,13 @@ def resolve_overrides_from_headers(headers: Mapping[str, str] | None) -> dict[st
     lowered: dict[str, list[str]] = {}
     for k, v in headers.items():
         lowered.setdefault(k.lower(), []).append(v)
-    token = _first_header(lowered, "x-cnb-token") or _first_header(lowered, "token")
-    repo = _first_header(lowered, "x-cnb-repo") or _first_header(lowered, "repo")
+    token = _first_header(lowered, "x-cnb-token")
+    repo = _first_header(lowered, "x-cnb-repo")
     if not (token and repo):
         # 凭据不齐：拒绝进入头模式，避免部分回落组合出危险配置
         return {}
     overrides: dict[str, str] = {"token": token, "repo": repo}
-    base_url = _first_header(lowered, "x-cnb-base-url") or _first_header(lowered, "base-url")
+    base_url = _first_header(lowered, "x-cnb-base-url")
     if base_url:
         overrides["base_url"] = base_url
     return overrides
