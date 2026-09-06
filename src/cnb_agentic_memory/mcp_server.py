@@ -336,12 +336,37 @@ DEFAULT_HOST = "127.0.0.1"
 
 
 def parse_host(value: str | None) -> str:
-    """解析监听地址：键存在但值为空（容器编排常见）回落 127.0.0.1。
+    """CLI --host 解析：strip，空值回落 127.0.0.1，畸形地址报 argparse 错误（exit 2）。
 
     空串透传 uvicorn 会绑定全部网卡（等效 0.0.0.0），却绕过通配安全提醒，
-    故与 parse_transport/parse_port 同口径清洗。
+    故与 parse_transport/parse_port 同口径清洗。畸形 host:port/全角冒号
+    在白名单归一化下永不生效，CLI 显式传错应立即暴露（与 parse_port_strict
+    同理）；环境变量兜底走 parse_host_env，告警回落不崩启动。
     """
     stripped = (value or "").strip()
+    try:
+        normalize_allowed_host(stripped)
+    except ValueError as err:
+        raise argparse.ArgumentTypeError(f"监听地址无法解析：{stripped!r}（{err}）") from None
+    return stripped or DEFAULT_HOST
+
+
+def parse_host_env(value: str | None) -> str:
+    """环境变量 MCP_HOST 兜底解析：畸形值 stderr 告警回落 127.0.0.1，不崩启动。
+
+    env default 不经 argparse type 校验，畸形值若不清洗会穿透到白名单
+    归一化裸 traceback 崩启动（复审阻塞项）；告警口径与 --allowed-host
+    畸形条目一致。
+    """
+    stripped = (value or "").strip()
+    try:
+        normalize_allowed_host(stripped)
+    except ValueError as err:
+        print(
+            f"警告：CNB_AGENTIC_MEMORY_MCP_HOST {stripped!r} 无法解析（{err}），回落 {DEFAULT_HOST}",
+            file=sys.stderr,
+        )
+        return DEFAULT_HOST
     return stripped or DEFAULT_HOST
 
 
@@ -446,7 +471,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--host",
         type=parse_host,
-        default=parse_host(env("MCP_HOST")),
+        default=parse_host_env(env("MCP_HOST")),
         help="HTTP 监听地址，仅 sse/streamable-http 有效（默认 127.0.0.1）",
     )
     parser.add_argument(
@@ -507,7 +532,11 @@ def main(argv: list[str] | None = None) -> None:
                 # 静默放行或崩启动（与 env 异常值防御口径一致）
                 print(f"警告：--allowed-host 条目 {extra!r} 无法解析（{err}），已忽略", file=sys.stderr)
                 continue
-            if base and base not in extra_bases:
+            if not base:
+                # ":*" 剥壳后为空串：同样永不生效的配置笔误，与其他畸形条目同口径告警
+                print(f"警告：--allowed-host 条目 {extra!r} 解析为空，已忽略", file=sys.stderr)
+                continue
+            if base not in extra_bases:
                 extra_bases.append(base)
         # Origin 口径：本机直连为纯 HTTP（uvicorn 无 TLS）单 scheme；--allowed-host
         # 是反代对外域名，反代入口多为 HTTPS（浏览器 Origin 带 https scheme），

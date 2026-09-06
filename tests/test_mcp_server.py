@@ -882,3 +882,29 @@ def test_allowed_host_cli_comma_split_and_malformed_warn(
     sec2 = calls[-1]["transport_security"]
     assert _fw_matched(sec2.allowed_hosts, "good.example.com")
     assert not _fw_matched(sec2.allowed_hosts, "bad.example.com")
+
+
+def test_malformed_host_cli_errors_env_falls_back(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """畸形 --host：CLI 显式传参 exit 2；env 兜底 stderr 告警回落 127.0.0.1，不崩启动。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    # CLI 显式传错立即暴露（与 parse_port_strict 同理）
+    with pytest.raises(SystemExit) as exc_info:
+        mcp_server.main(["--transport", "streamable-http", "--host", "myhost:abc"])
+    assert exc_info.value.code == 2
+
+    # env 注入畸形值（含全角冒号）：告警回落默认地址，服务照常启动（复审阻塞项）
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "127.0.0.1：8443")
+    mcp_server.main(["--transport", "streamable-http"])
+    captured = capsys.readouterr()
+    assert "无法解析" in captured.err
+    assert calls[-1]["host"] == "127.0.0.1"
+
+    # ":*" 解析为空串：与其他畸形条目同口径 stderr 告警跳过
+    mcp_server.main(["--transport", "streamable-http", "--allowed-host", ":*"])
+    captured2 = capsys.readouterr()
+    assert "解析为空" in captured2.err
+    assert not any("解析为空" in p or p == ":*" for p in calls[-1]["transport_security"].allowed_hosts)
