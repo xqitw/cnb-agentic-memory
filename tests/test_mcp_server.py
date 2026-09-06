@@ -849,3 +849,36 @@ def test_allowed_host_matching_semantics(monkeypatch: pytest.MonkeyPatch) -> Non
     assert _fw_matched(sec3.allowed_hosts, "127.0.0.1")
     assert _fw_matched(sec3.allowed_origins, "http://localhost")
     assert not _fw_matched(sec3.allowed_hosts, "evil.example.com")
+
+
+def test_normalize_allowed_host_rejects_malformed() -> None:
+    """畸形条目（端口段非数字、全角冒号）raise ValueError：静默放行会永不生效。"""
+    from cnb_agentic_memory.mcp_server import normalize_allowed_host
+
+    for bad in ("mem.example.com:", "mem.example.com:abc", "mem.example.com:-1", "mem.example.com：8443"):
+        with pytest.raises(ValueError):
+            normalize_allowed_host(bad)
+
+
+def test_allowed_host_cli_comma_split_and_malformed_warn(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI 单值内逗号拆分（与 env 口径一致）；畸形条目 stderr 告警跳过，不崩启动。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "a.example.com:8443,b.example.org"])
+    sec = calls[-1]["transport_security"]
+    # 逗号串不得整串成条目（复审致命项：整串永不匹配 → 全量 421）
+    assert "a.example.com:8443,b.example.org" not in sec.allowed_hosts
+    assert _fw_matched(sec.allowed_hosts, "a.example.com:8443")
+    assert _fw_matched(sec.allowed_hosts, "b.example.org")
+    assert _fw_matched(sec.allowed_origins, "https://b.example.org")
+
+    # 畸形条目：stderr 告警 + 跳过，合法条目照常生效
+    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "good.example.com,bad.example.com:"])
+    captured = capsys.readouterr()
+    assert "无法解析" in captured.err
+    sec2 = calls[-1]["transport_security"]
+    assert _fw_matched(sec2.allowed_hosts, "good.example.com")
+    assert not _fw_matched(sec2.allowed_hosts, "bad.example.com")

@@ -364,6 +364,9 @@ def normalize_allowed_host(entry: str) -> str:
     ``host:port`` 必须先经 ``ipaddress`` 判别是否真 IPv6，否则裸 IPv6 带
     端口之外的 ``mem.example.com:8443`` 会被「含冒号即裹括号」误判成
     ``[mem.example.com:8443]`` 而永不匹配（复审致命项）。
+
+    畸形条目（端口段非数字、全角冒号）raise ValueError：此类条目在框架
+    匹配语义下永不生效，静默放行原样会让用户误以为已配置成功（复审建议）。
     """
     value = entry.strip()
     if value.endswith(":*"):
@@ -374,10 +377,13 @@ def normalize_allowed_host(entry: str) -> str:
         return f"[{value}]" if ipaddress.ip_address(value).version == 6 else value
     except ValueError:
         pass
+    if "：" in value:
+        raise ValueError("含全角冒号，请改用半角（形如 host 或 host:port）")
     if ":" in value:
         host, _, port = value.rpartition(":")
         if port.isdigit() and host:
             return normalize_allowed_host(host)
+        raise ValueError("端口段必须为数字（形如 host 或 host:port）")
     return value
 
 
@@ -487,8 +493,20 @@ def main(argv: list[str] | None = None) -> None:
             ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", normalize_allowed_host(args.host)]
         )
         extra_bases: list[str] = []
-        for extra in args.allowed_host:
-            base = normalize_allowed_host(extra)
+        # CLI 单值内逗号同样拆分：文档承诺「可多次传入或逗号分隔」，逗号分隔
+        # 原先只对 env 生效，CLI 整串成条目在框架匹配语义下永不生效（全量 421）。
+        # env default 已拆好，无逗号再拆一次无副作用
+        extra_values = [
+            piece.strip() for raw in args.allowed_host for piece in raw.split(",") if piece.strip()
+        ]
+        for extra in extra_values:
+            try:
+                base = normalize_allowed_host(extra)
+            except ValueError as err:
+                # 畸形条目（端口段非数字等）框架语义下永不生效，告警跳过而非
+                # 静默放行或崩启动（与 env 异常值防御口径一致）
+                print(f"警告：--allowed-host 条目 {extra!r} 无法解析（{err}），已忽略", file=sys.stderr)
+                continue
             if base and base not in extra_bases:
                 extra_bases.append(base)
         # Origin 口径：本机直连为纯 HTTP（uvicorn 无 TLS）单 scheme；--allowed-host
