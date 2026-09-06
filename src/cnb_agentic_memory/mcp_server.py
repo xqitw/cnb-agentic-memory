@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import sys
 from email.message import Message
@@ -355,6 +356,31 @@ def parse_allowed_hosts(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def normalize_allowed_host(entry: str) -> str:
+    """把 --allowed-host 条目归一化为「Host 基名」（IPv6 裹方括号）。
+
+    纯域名 / ``host:*`` / ``host:port`` / ``[IPv6]`` 四种输入形态统一产出同一
+    基名，由调用方按需生成 :* 端口通配与无端口精确两种白名单形态。
+    ``host:port`` 必须先经 ``ipaddress`` 判别是否真 IPv6，否则裸 IPv6 带
+    端口之外的 ``mem.example.com:8443`` 会被「含冒号即裹括号」误判成
+    ``[mem.example.com:8443]`` 而永不匹配（复审致命项）。
+    """
+    value = entry.strip()
+    if value.endswith(":*"):
+        value = value[:-2]
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    try:
+        return f"[{value}]" if ipaddress.ip_address(value).version == 6 else value
+    except ValueError:
+        pass
+    if ":" in value:
+        host, _, port = value.rpartition(":")
+        if port.isdigit() and host:
+            return normalize_allowed_host(host)
+    return value
+
+
 def parse_transport(value: str | None) -> str:
     """解析传输协议：空白/大小写/下划线连字符笔误清洗，非法值回落 stdio。
 
@@ -449,51 +475,43 @@ def main(argv: list[str] | None = None) -> None:
         # sse / streamable-http：host/port 透传给 MCP 框架的 uvicorn 启动参数。
         # 框架仅对 localhost 自动开 DNS rebinding 防护，其他监听地址显式透传
         # TransportSecuritySettings 保持防护常开。白名单 = localhost 族 + 监听
-        # 地址直连形式（IPv6 需方括号，RFC 3986）+ --allowed-host 追加项（反代
-        # 保留真实 Host 域名的部署场景）；Origin 白名单与 Host 白名单同源对齐，
-        # 避免浏览器同源请求被 403。
+        # 地址直连形式 + --allowed-host 追加项（反代保留真实 Host 的部署场景）。
         from mcp.server.transport_security import TransportSecuritySettings
 
-        allowed_hosts = [
-            "localhost:*",
-            "127.0.0.1:*",
-            "[::1]:*",
-            "[::ffff:127.0.0.1]:*",
-        ]
-        if args.host in ("0.0.0.0", "::"):
-            allowed_hosts += ["0.0.0.0:*", "[::]:*"]
-        elif args.host:
-            # IPv6 直连时 Host 头必带方括号（RFC 3986），模式须同步加方括号
-            pattern = f"[{args.host}]:*" if ":" in args.host else f"{args.host}:*"
-            allowed_hosts += [pattern]
-        # 追加项为纯域名/IP（自动补 :* 端口通配），已含 :* 或方括号 IPv6 的条目原样保留
-        extra_patterns: list[str] = []
-        extra_portless: list[str] = []
+        # 白名单形态统一生成（复审整改）：框架对 :* 通配的匹配要求 Host/Origin
+        # 值带显式端口（startswith(base + ":")），而浏览器在默认端口（80/443）下
+        # 不序列化端口（WHATWG origin 序列化），故每个基名同时生成 :* 端口通配
+        # （非标准端口兜底）与无端口精确（默认端口场景）两种 Host 条目，恶意
+        # 域名仍被精确匹配语义拒之门外，防护面未放宽。
+        host_bases = dict.fromkeys(
+            ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", normalize_allowed_host(args.host)]
+        )
+        extra_bases: list[str] = []
         for extra in args.allowed_host:
-            if ":*" in extra:
-                extra_patterns.append(extra)
-                continue
-            base = f"[{extra}]" if ":" in extra and not extra.startswith("[") else extra
-            extra_patterns.append(f"{base}:*")
-            extra_portless.append(base)
-        allowed_hosts += extra_portless + extra_patterns
+            base = normalize_allowed_host(extra)
+            if base and base not in extra_bases:
+                extra_bases.append(base)
+        # Origin 口径：本机直连为纯 HTTP（uvicorn 无 TLS）单 scheme；--allowed-host
+        # 是反代对外域名，反代入口多为 HTTPS（浏览器 Origin 带 https scheme），
+        # 追加域名放行 http/https 双 scheme，均含通配与精确两形态
+        allowed_hosts = (
+            [f"{b}:*" for b in host_bases] + list(host_bases) + [f"{b}:*" for b in extra_bases] + extra_bases
+        )
+        allowed_origins = (
+            [f"http://{b}" for b in host_bases]
+            + [f"http://{b}:*" for b in host_bases]
+            + [
+                f"{scheme}://{b}{':*' if with_port else ''}"
+                for b in extra_bases
+                for with_port in (False, True)
+                for scheme in ("http", "https")
+            ]
+        )
 
         security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
             allowed_hosts=allowed_hosts,
-            # 本机直连为纯 HTTP（uvicorn 无 TLS），localhost 族与监听地址直连形式
-            # 的 Origin 固定 http 口径即可；--allowed-host 是反代对外域名，反代
-            # 入口多为 HTTPS（浏览器 Origin 带 https scheme），故追加项同时放行
-            # http/https 两种 Origin，否则 HTTPS 反代下同源请求会被 403。
-            # 另：框架对 :* 通配的匹配要求 Origin/Host 值带显式端口
-            # （startswith(base + ":")），而浏览器在默认端口（443/80）下不序列化
-            # 端口（WHATWG origin 序列化），故追加项必须同时补无端口精确形态
-            # （Host 补裸域名、Origin 补双 scheme），走精确匹配分支，不放宽防护面
-            allowed_origins=(
-                [f"http://{h}" for h in allowed_hosts if h not in extra_patterns and h not in extra_portless]
-                + [f"{scheme}://{p}" for p in extra_patterns for scheme in ("http", "https")]
-                + [f"{scheme}://{b}" for b in extra_portless for scheme in ("http", "https")]
-            ),
+            allowed_origins=allowed_origins,
         )
         mcp.run(
             transport=args.transport,

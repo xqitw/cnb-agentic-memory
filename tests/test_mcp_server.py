@@ -800,3 +800,52 @@ def test_allowed_host_default_not_mutated_across_parses(
     sec = calls[-1]["transport_security"]
     assert "env.example.com:*" in sec.allowed_hosts
     assert "cli.example.com:*" not in sec.allowed_hosts
+
+
+def _fw_matched(patterns: list[str], value: str) -> bool:
+    """复现 mcp 框架 TransportSecurityMiddleware 的匹配语义：精确相等，
+    或 ``base:*`` 通配按 ``value.startswith(base + ":")`` 判定（要求值带端口）。"""
+    return value in patterns or any(p.endswith(":*") and value.startswith(p[:-1]) for p in patterns)
+
+
+def test_normalize_allowed_host() -> None:
+    """四种输入形态归一化为同一基名；host:port 不被误判为 IPv6 裹括号（复审致命项）。"""
+    from cnb_agentic_memory.mcp_server import normalize_allowed_host
+
+    assert normalize_allowed_host("mem.example.com") == "mem.example.com"
+    assert normalize_allowed_host("mem.example.com:*") == "mem.example.com"
+    # 关键回归：host:port 不得裹方括号（曾生成 [mem.example.com:8443] 永不匹配）
+    assert normalize_allowed_host("mem.example.com:8443") == "mem.example.com"
+    assert normalize_allowed_host("127.0.0.1") == "127.0.0.1"
+    assert normalize_allowed_host("2001:db8::1") == "[2001:db8::1]"
+    assert normalize_allowed_host("[2001:db8::1]") == "[2001:db8::1]"
+    assert normalize_allowed_host("[::1]:8443") == "[::1]"
+
+
+def test_allowed_host_matching_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
+    """白名单按框架匹配语义验证：默认端口（无端口值）与显式端口（:* 通配）均命中，恶意域名仍拒。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    # host:port 输入形态（非标准端口反代保留完整 Host）
+    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "mem.example.com:8443"])
+    sec = calls[-1]["transport_security"]
+    assert "[mem.example.com" not in "".join(sec.allowed_hosts)
+    assert _fw_matched(sec.allowed_hosts, "mem.example.com:8443")
+    assert _fw_matched(sec.allowed_hosts, "mem.example.com")
+    assert _fw_matched(sec.allowed_origins, "https://mem.example.com:8443")
+    assert _fw_matched(sec.allowed_origins, "https://mem.example.com")
+    assert not _fw_matched(sec.allowed_hosts, "evil.example.com:8443")
+
+    # 显式 :* 输入形态同样生成无端口精确形态（默认端口反代不再 403/421）
+    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "mem.example.com:*"])
+    sec2 = calls[-1]["transport_security"]
+    assert _fw_matched(sec2.allowed_hosts, "mem.example.com")
+    assert _fw_matched(sec2.allowed_origins, "https://mem.example.com")
+
+    # 默认端口直连：Host/Origin 不带端口（如 --port 80），localhost 族精确形态命中
+    mcp_server.main(["--transport", "streamable-http", "--port", "80"])
+    sec3 = calls[-1]["transport_security"]
+    assert _fw_matched(sec3.allowed_hosts, "127.0.0.1")
+    assert _fw_matched(sec3.allowed_origins, "http://localhost")
+    assert not _fw_matched(sec3.allowed_hosts, "evil.example.com")
