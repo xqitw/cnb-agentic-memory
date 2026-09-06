@@ -60,7 +60,7 @@ cnb-agentic-memory-mcp --transport sse --host 0.0.0.0 --port 8000
 | `--transport` | `CNB_AGENTIC_MEMORY_MCP_TRANSPORT` | `stdio` | 传输协议：`stdio` / `sse` / `streamable-http` |
 | `--host` | `CNB_AGENTIC_MEMORY_MCP_HOST` | `127.0.0.1` | HTTP 监听地址，仅 sse/streamable-http 有效；空值/空白回落默认；对外暴露时用 `0.0.0.0`（须置于反代之后） |
 | `--port` | `CNB_AGENTIC_MEMORY_MCP_PORT` | `8000` | HTTP 监听端口，仅 sse/streamable-http 有效；CLI 传非法/越界值直接报错退出（环境变量异常值静默回落默认） |
-| `--allowed-host` | `CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS` | 无 | DNS rebinding 防护额外放行的 Host 白名单（可多次传入或逗号分隔）。反代按最佳实践保留真实 Host（`proxy_set_header Host $host`）部署时，须把对外域名加入白名单，否则会被 421 拒绝；追加域名同时放行 http/https 两种 Origin（覆盖 HTTPS 反代入口） |
+| `--allowed-host` | `CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS` | 无 | DNS rebinding 防护额外放行的 Host 白名单（可多次传入或逗号分隔）。反代按最佳实践保留真实 Host（`proxy_set_header Host $host`）部署时，须把对外域名加入白名单，否则会被 421 拒绝；追加域名自动同时放行 http/https Origin 与带端口（`:*` 通配）/无端口（默认 443/80，浏览器不序列化端口）两种形态 |
 
 > 安全提示：HTTP transport 无内置鉴权，务必配合反向代理/网关做访问控制与
 > Token 校验后再对外暴露，避免 `CNB_AGENTIC_MEMORY_TOKEN` 凭据被任意调用方

@@ -468,14 +468,15 @@ def main(argv: list[str] | None = None) -> None:
             allowed_hosts += [pattern]
         # 追加项为纯域名/IP（自动补 :* 端口通配），已含 :* 或方括号 IPv6 的条目原样保留
         extra_patterns: list[str] = []
+        extra_portless: list[str] = []
         for extra in args.allowed_host:
             if ":*" in extra:
                 extra_patterns.append(extra)
-            elif ":" in extra and not extra.startswith("["):
-                extra_patterns.append(f"[{extra}]:*")
-            else:
-                extra_patterns.append(f"{extra}:*")
-        allowed_hosts += extra_patterns
+                continue
+            base = f"[{extra}]" if ":" in extra and not extra.startswith("[") else extra
+            extra_patterns.append(f"{base}:*")
+            extra_portless.append(base)
+        allowed_hosts += extra_portless + extra_patterns
 
         security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
@@ -483,9 +484,16 @@ def main(argv: list[str] | None = None) -> None:
             # 本机直连为纯 HTTP（uvicorn 无 TLS），localhost 族与监听地址直连形式
             # 的 Origin 固定 http 口径即可；--allowed-host 是反代对外域名，反代
             # 入口多为 HTTPS（浏览器 Origin 带 https scheme），故追加项同时放行
-            # http/https 两种 Origin，否则 HTTPS 反代下同源请求会被 403
-            allowed_origins=[f"http://{h}" for h in allowed_hosts if h not in extra_patterns]
-            + [f"{scheme}://{h}" for h in extra_patterns for scheme in ("http", "https")],
+            # http/https 两种 Origin，否则 HTTPS 反代下同源请求会被 403。
+            # 另：框架对 :* 通配的匹配要求 Origin/Host 值带显式端口
+            # （startswith(base + ":")），而浏览器在默认端口（443/80）下不序列化
+            # 端口（WHATWG origin 序列化），故追加项必须同时补无端口精确形态
+            # （Host 补裸域名、Origin 补双 scheme），走精确匹配分支，不放宽防护面
+            allowed_origins=(
+                [f"http://{h}" for h in allowed_hosts if h not in extra_patterns and h not in extra_portless]
+                + [f"{scheme}://{p}" for p in extra_patterns for scheme in ("http", "https")]
+                + [f"{scheme}://{b}" for b in extra_portless for scheme in ("http", "https")]
+            ),
         )
         mcp.run(
             transport=args.transport,

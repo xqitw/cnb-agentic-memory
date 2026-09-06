@@ -748,6 +748,11 @@ def test_allowed_host_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # 反代对外域名同时放行 http/https Origin（HTTPS 反代入浏览器请求不被 403）
     assert "https://mem.example.com:*" in sec.allowed_origins
     assert "http://mem.example.com:*" in sec.allowed_origins
+    # 默认端口（443/80）下浏览器 Origin/Host 不序列化端口，而框架对 :* 通配
+    # 的匹配要求值带显式端口（startswith(base + ":")），故必须有无端口精确形态
+    assert "mem.example.com" in sec.allowed_hosts
+    assert "https://mem.example.com" in sec.allowed_origins
+    assert "http://mem.example.com" in sec.allowed_origins
     # 本机直连口径仍为 http 单一 scheme
     assert "http://localhost:*" in sec.allowed_origins
     assert "https://localhost:*" not in sec.allowed_origins
@@ -757,6 +762,8 @@ def test_allowed_host_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
     sec2 = calls[-1]["transport_security"]
     assert "env.example.com:*" in sec2.allowed_hosts
     assert "dns.example.net:*" in sec2.allowed_hosts
+    assert "env.example.com" in sec2.allowed_hosts
+    assert "https://env.example.com" in sec2.allowed_origins
 
 
 def test_resolve_overrides_rejects_bare_header_names() -> None:
