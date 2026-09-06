@@ -745,6 +745,12 @@ def test_allowed_host_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
     sec = calls[-1]["transport_security"]
     assert "mem.example.com:*" in sec.allowed_hosts
     assert "cdn.example.org:*" in sec.allowed_hosts
+    # 反代对外域名同时放行 http/https Origin（HTTPS 反代入浏览器请求不被 403）
+    assert "https://mem.example.com:*" in sec.allowed_origins
+    assert "http://mem.example.com:*" in sec.allowed_origins
+    # 本机直连口径仍为 http 单一 scheme
+    assert "http://localhost:*" in sec.allowed_origins
+    assert "https://localhost:*" not in sec.allowed_origins
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "env.example.com, dns.example.net")
     mcp_server.main(["--transport", "streamable-http"])

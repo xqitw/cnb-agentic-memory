@@ -426,8 +426,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--allowed-host",
         action="append",
-        # 拷贝一份再追加：action="append" 会原地修改 default，多次 parse_args
-        # 时 env 解析出的白名单会跨调用累积
+        # 拷贝一份再追加双保险：argparse 自 3.9 起 action="append" 会先拷贝
+        # default 再追加（bpo-33519），本项目 requires-python >= 3.11 下不会
+        # 原地修改；显式拷贝防御未来行为回退，多次 parse_args 互不污染
         default=list(parse_allowed_hosts(env("MCP_ALLOWED_HOSTS"))),
         help="DNS rebinding 防护额外放行的 Host 白名单（可多次传入，如反代转发的对外域名；环境变量 CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS，逗号分隔）",
     )
@@ -466,20 +467,25 @@ def main(argv: list[str] | None = None) -> None:
             pattern = f"[{args.host}]:*" if ":" in args.host else f"{args.host}:*"
             allowed_hosts += [pattern]
         # 追加项为纯域名/IP（自动补 :* 端口通配），已含 :* 或方括号 IPv6 的条目原样保留
+        extra_patterns: list[str] = []
         for extra in args.allowed_host:
             if ":*" in extra:
-                allowed_hosts.append(extra)
+                extra_patterns.append(extra)
             elif ":" in extra and not extra.startswith("["):
-                allowed_hosts.append(f"[{extra}]:*")
+                extra_patterns.append(f"[{extra}]:*")
             else:
-                allowed_hosts.append(f"{extra}:*")
+                extra_patterns.append(f"{extra}:*")
+        allowed_hosts += extra_patterns
 
         security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
             allowed_hosts=allowed_hosts,
-            # 与框架 localhost 自动防护同口径：Origin 白名单随 Host 白名单同源生成，
-            # 否则带 Origin 头的浏览器同源请求会被 403（allowed_origins 空列表 = 全拒）
-            allowed_origins=[f"http://{h}" for h in allowed_hosts],
+            # 本机直连为纯 HTTP（uvicorn 无 TLS），localhost 族与监听地址直连形式
+            # 的 Origin 固定 http 口径即可；--allowed-host 是反代对外域名，反代
+            # 入口多为 HTTPS（浏览器 Origin 带 https scheme），故追加项同时放行
+            # http/https 两种 Origin，否则 HTTPS 反代下同源请求会被 403
+            allowed_origins=[f"http://{h}" for h in allowed_hosts if h not in extra_patterns]
+            + [f"{scheme}://{h}" for h in extra_patterns for scheme in ("http", "https")],
         )
         mcp.run(
             transport=args.transport,
