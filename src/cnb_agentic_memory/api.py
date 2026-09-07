@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import os
 from collections.abc import Mapping
 from typing import Any
@@ -124,18 +124,43 @@ class SharedClientPool:
     """按配置键缓存的 CNBApiClient 池（MCP 工具层专用，SDK 用户不受影响）。
 
     #83 建议第 5 条：HTTP 共享部署下每个工具调用新建客户端（TLS 握手）开销
-    可观。按 `(token, repo, base_url)` 键缓存复用连接池；键空间有界
-    （本机 env 1 个 + 共享部署每用户 1 个），无需淘汰。
+    可观。按配置键缓存复用连接池；键空间有界（本机 env 1 个 + 共享部署
+    每用户 1 个），无需淘汰。
 
-    并发关闭语义：acquire 命中缓存即引用计数 +1；release -1，归零才真正
-    close——避免 A 协程还在用而 B 协程的 async with 先退出把连接关掉。
-    全部操作经 asyncio.Lock 串行化（创建/计数/关闭均在事件循环内，锁
-    粒度小，无请求路径阻塞）。
+    生命周期：acquire/release 仅做同步字典计数（事件循环单线程内天然
+    互斥，无挂起点 → 无需 asyncio.Lock，也消除模块级锁跨事件循环的
+    死锁面——复审阻塞项）；引用归零**不**关闭连接，条目保活复用，
+    关闭统一交显式 `aclose()`（进程退出/测试清理）——串行工具调用
+    每次 acquire/release 后条目仍在，复用才真正达成（复审阻塞项：
+    归零即关使主路径每次缓存未命中，TLS 重握手）。
+
+    凭据不进键明文：token 以 sha256 摘要参与键（复审阻塞项：明文
+    token 进程级驻留，crash/dump/诊断即暴露全体用户凭据）。
     """
 
     def __init__(self) -> None:
         self._clients: dict[tuple[str, str, str, str], tuple[CNBApiClient, int]] = {}
-        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _token_digest(token: str) -> str:
+        """token 的 sha256 摘要（前 16 字符）：键唯一性够用且不落明文。"""
+        return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+    def _key(
+        self,
+        token: str | None,
+        repo: str | None,
+        base_url: str | None,
+        timeout: float | None,
+    ) -> tuple[str, str, str, str]:
+        """配置键：token 走摘要，repo/base_url/timeout 明文（非敏感）。"""
+        resolved_timeout = timeout if timeout is not None else parse_timeout(env("TIMEOUT"))
+        return (
+            self._token_digest((token or env("TOKEN") or "").strip()),
+            (repo or env("REPO") or "").strip(),
+            (base_url or env("BASE_URL") or DEFAULT_BASE_URL).rstrip("/"),
+            str(resolved_timeout),
+        )
 
     async def acquire(
         self,
@@ -145,42 +170,32 @@ class SharedClientPool:
         timeout: float | None = None,
     ) -> CNBApiClient:
         """取键相同的缓存客户端（引用 +1），无则构造并缓存。"""
-        async with self._lock:
-            # timeout 参与键：不同超时配置不能共享底层 client
-            resolved_timeout = timeout if timeout is not None else parse_timeout(env("TIMEOUT"))
-            key = (
-                (token or env("TOKEN") or "").strip(),
-                (repo or env("REPO") or "").strip(),
-                (base_url or env("BASE_URL") or DEFAULT_BASE_URL).rstrip("/"),
-                str(resolved_timeout),
-            )
-            entry = self._clients.get(key)
-            if entry is not None:
-                client, refs = entry
-                self._clients[key] = (client, refs + 1)
-                return client
-            client = CNBApiClient(token=token, repo=repo, base_url=base_url, timeout=resolved_timeout)
-            self._clients[key] = (client, 1)
+        key = self._key(token, repo, base_url, timeout)
+        entry = self._clients.get(key)
+        if entry is not None:
+            client, refs = entry
+            self._clients[key] = (client, refs + 1)
             return client
+        client = CNBApiClient(token=token, repo=repo, base_url=base_url, timeout=timeout)
+        self._clients[key] = (client, 1)
+        return client
 
     async def release(self, client: CNBApiClient) -> None:
-        """引用 -1；归零才真正关闭底层连接（并发安全：锁内判定）。"""
-        async with self._lock:
-            for key, (cached, refs) in list(self._clients.items()):
-                if cached is client:
-                    if refs <= 1:
-                        await cached.close()
-                        del self._clients[key]
-                    else:
-                        self._clients[key] = (cached, refs - 1)
-                    return
+        """引用 -1；归零**不**关闭——条目保活复用，关闭统一走 aclose()。
+
+        本方法无 await 挂起点：事件循环单线程内「查找-计数」不可被其他
+        协程打断，引用计数天然线程安全（就 asyncio 并发模型而言）。
+        """
+        for key, (cached, refs) in self._clients.items():
+            if cached is client:
+                self._clients[key] = (cached, max(refs - 1, 0))
+                return
 
     async def aclose(self) -> None:
-        """关闭全部缓存客户端（进程退出/测试清理用）。"""
-        async with self._lock:
-            for client, _ in self._clients.values():
-                await client.close()
-            self._clients.clear()
+        """关闭全部缓存客户端并清空（进程退出/测试清理用；显式调用）。"""
+        for client, _ in self._clients.values():
+            await client.close()
+        self._clients.clear()
 
 
 class CNBApiClient:

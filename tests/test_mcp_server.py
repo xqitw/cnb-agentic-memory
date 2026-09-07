@@ -1010,19 +1010,22 @@ def test_shared_client_pool_reuse_and_refcount(monkeypatch: pytest.MonkeyPatch) 
         assert c1 is c2  # 同键复用同一实例（免每请求 TLS 握手）
         assert len(pool._clients) == 1
 
-        # A 还在用（refs=2），B 的 async with 先退出：条目不删（客户端不关）
+        # A 还在用（refs=2），B 的 async with 先退出：引用 -1 条目保留
         await pool.release(c1)
         assert len(pool._clients) == 1
         assert pool._clients[next(iter(pool._clients))][1] == 1
 
-        # 引用归零才真正移除条目
+        # 引用归零：条目保活复用（复审阻塞项：归零即关使串行主路径每次
+        # 缓存未命中，TLS 重握手）——关闭统一走显式 aclose()
         await pool.release(c2)
-        assert len(pool._clients) == 0
+        assert len(pool._clients) == 1
+        assert pool._clients[next(iter(pool._clients))][1] == 0
 
-        # 移除后再 acquire：新实例
+        # 归零后再 acquire：同实例复用（条目保活的直接收益）
         c3 = await pool.acquire()
-        assert c3 is not c1
+        assert c3 is c1
         await pool.aclose()
+        assert len(pool._clients) == 0
 
     asyncio.run(scenario())
 
@@ -1047,6 +1050,49 @@ def test_shared_client_pool_distinct_keys(monkeypatch: pytest.MonkeyPatch) -> No
         await pool.release(a)
         await pool.release(b)
         await pool.release(c)
+        await pool.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_shared_client_pool_serial_reuse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """串行主路径复用（幽明阻塞项实测场景）：连续多次 acquire/release 得到同一实例。"""
+    import asyncio
+
+    from cnb_agentic_memory.api import SharedClientPool
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    pool = SharedClientPool()
+
+    async def scenario():
+        seen = []
+        for _ in range(3):
+            c = await pool.acquire()
+            seen.append(c)
+            await pool.release(c)
+        # 条目保活：串行每次 acquire 命中缓存，三连调用同一实例（免 TLS 重握手）
+        assert seen[0] is seen[1] is seen[2]
+        await pool.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_shared_client_pool_token_not_in_plaintext(monkeypatch: pytest.MonkeyPatch) -> None:
+    """token 走 sha256 摘要进键（锐鉴阻塞项）：明文凭据不进程级驻留。"""
+    import asyncio
+
+    from cnb_agentic_memory.api import SharedClientPool
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    pool = SharedClientPool()
+
+    async def scenario():
+        await pool.acquire(token="secret-token-value")
+        dumped = repr(pool._clients)
+        assert "secret-token-value" not in dumped
+        await pool.release(next(iter(pool._clients.values()))[0])
         await pool.aclose()
 
     asyncio.run(scenario())
