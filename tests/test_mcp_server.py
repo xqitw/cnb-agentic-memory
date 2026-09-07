@@ -1139,6 +1139,7 @@ def test_shared_client_pool_cross_loop_isolated(
     async def acquire_release_in_foreign_loop():
         c = await pool.acquire()
         assert getattr(c, "_pool_temporary", False)
+        _ = c.client  # 物化懒创建的 _client（否则断言恒真，锐鉴三审阻塞2）
         await pool.release(c)
         assert c._client is None  # 临时客户端 release 即关
         return c
@@ -1220,6 +1221,7 @@ def test_shared_client_pool_bounded_eviction(monkeypatch: pytest.MonkeyPatch) ->
         assert len(pool._clients) == 3
 
         # 第 4 个键触发淘汰：最旧的 0 引用条目被逐出（先 close 再删，不泄漏）
+        _ = clients[0].client  # 物化懒创建的 _client（否则断言恒真，锐鉴三审阻塞1）
         await pool.acquire(repo="g/r-new")
         assert len(pool._clients) == 3
         keys = list(pool._clients.keys())
