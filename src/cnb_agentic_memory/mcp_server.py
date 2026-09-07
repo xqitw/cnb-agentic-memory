@@ -17,6 +17,7 @@ import functools
 import ipaddress
 import json
 import sys
+from contextlib import asynccontextmanager
 from email.message import Message
 from importlib.metadata import PackageNotFoundError, metadata
 from typing import Any, cast
@@ -25,7 +26,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.context import Context
 
 from . import __version__
-from .api import CNBApiClient, build_client_from_headers, env, resolve_overrides_from_headers
+from .api import SharedClientPool, env, resolve_overrides_from_headers
 from .memory import Memory, MemoryRuleError, SearchResult, WriteResult
 
 _DIST_NAME = "cnb-agentic-memory"  # PyPI 发行名（pyproject [project].name 同源）
@@ -38,6 +39,9 @@ _REQUIRE_HEADERS_TRUTHY = frozenset({"1", "true", "yes", "on"})
 # 运行时开关状态：main 解析 --require-headers 后设置；模块级变量而非工具参数——
 # 工具签名不得携带与调用语义无关的部署开关（会污染 MCP Schema）
 _require_headers: bool = False
+
+# 共享客户端池：MCP 工具层专用（#83 建议第 5 条），按配置键复用连接池
+_client_pool = SharedClientPool()
 
 
 def _dist_meta() -> Message | None:
@@ -115,8 +119,9 @@ mcp = MCPServer(
 )
 
 
-def _client(ctx: Context | None) -> CNBApiClient:
-    """按本次请求构造 CNBApiClient：请求头配置优先，回落环境变量（见 api.build_client_from_headers）。
+@asynccontextmanager
+async def _client(ctx: Context | None):
+    """按本次请求取共享池客户端（async with 语义不变）：请求头配置优先，回落环境变量。
 
     MCP 框架对标注 Context 的参数自动注入请求上下文（不进入工具 Schema）：
     sse/streamable-http 下 ctx.headers 为该次 HTTP 请求头；stdio 下 ctx 仍被
@@ -126,18 +131,30 @@ def _client(ctx: Context | None) -> CNBApiClient:
     --require-headers 开启时（HTTP 共享部署强制多用户隔离），凭据头不齐的
     请求直接拒绝，不回落服务端环境变量凭据——杜绝匿名调用间接使用
     CNB_AGENTIC_MEMORY_TOKEN。stdio 下开关不生效（无请求头是常态）。
+
+    #83 建议第 5 条：客户端来自共享池（按 token/repo/base_url/timeout 键
+    复用连接池，免每请求 TLS 握手）；async with 退出时 release 引用，
+    归零才真正关闭（并发关闭语义见 api.SharedClientPool）。
     """
     headers = ctx.headers if ctx is not None else None
+    overrides = resolve_overrides_from_headers(headers) if headers else {}
     if _require_headers and headers is not None:
         # 仅约束 HTTP 传输：stdio 无请求头是常态，不适用本开关
-        overrides = resolve_overrides_from_headers(headers)
         if not overrides:
             raise MemoryRuleError(
                 "本服务已启用 --require-headers（强制凭据头）：请在请求头中同时提供 "
                 "X-CNB-Token 与 X-CNB-Repo（HTTP 共享部署的多用户隔离要求），"
                 "匿名请求不再回落服务端环境变量凭据。"
             )
-    return build_client_from_headers(headers)
+    client = await _client_pool.acquire(
+        token=overrides.get("token"),
+        repo=overrides.get("repo"),
+        base_url=overrides.get("base_url"),
+    )
+    try:
+        yield client
+    finally:
+        await _client_pool.release(client)
 
 
 def _tool_guard(fn):

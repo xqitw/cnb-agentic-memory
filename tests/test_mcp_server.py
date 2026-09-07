@@ -919,12 +919,24 @@ def test_require_headers_rejects_anonymous_http(monkeypatch: pytest.MonkeyPatch)
     mcp_server.main(["--transport", "streamable-http", "--require-headers"])
     assert mcp_server._require_headers is True
 
-    # 无凭据头：拒绝且不回落环境变量凭据
-    with pytest.raises(mcp_server.MemoryRuleError, match="强制凭据头"):
-        mcp_server._client(_ctx_of({"user-agent": "anonymous"}))
+    # 无凭据头：拒绝且不回落环境变量凭据（_client 现为 asynccontextmanager，进入 with 才触发校验）
+    import asyncio
 
-    # 凭据头齐全：正常放行
-    client = mcp_server._client(_ctx_of({"x-cnb-token": "t", "x-cnb-repo": "g/r"}))
+    async def _rejected():
+        async with mcp_server._client(_ctx_of({"user-agent": "anonymous"})):
+            pass
+
+    with pytest.raises(mcp_server.MemoryRuleError, match="强制凭据头"):
+        asyncio.run(_rejected())
+
+    # 凭据头齐全：正常放行（池 acquire 成功）
+    import asyncio
+
+    async def _allowed():
+        async with mcp_server._client(_ctx_of({"x-cnb-token": "t", "x-cnb-repo": "g/r"})) as c:
+            return c
+
+    client = asyncio.run(_allowed())
     assert client is not None
 
     # 拒绝走 _tool_guard 统一出口：调用方拿到可读修复指引 JSON，而非笼统框架异常（复审阻塞项）
@@ -951,7 +963,13 @@ def test_require_headers_stdio_unaffected(monkeypatch: pytest.MonkeyPatch) -> No
     mcp_server.main(["--transport", "stdio", "--require-headers"])
     assert mcp_server._require_headers is True
     # stdio 真实形态：ctx 非 None + headers=None → 不校验凭据
-    client = mcp_server._client(_ctx_of(None))
+    import asyncio
+
+    async def _stdio():
+        async with mcp_server._client(_ctx_of(None)) as c:
+            return c
+
+    client = asyncio.run(_stdio())
     assert client is not None
 
 
@@ -974,3 +992,61 @@ def test_require_headers_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "1")
     mcp_server.main(["--transport", "streamable-http"])
     assert mcp_server._require_headers is True
+
+
+def test_shared_client_pool_reuse_and_refcount(monkeypatch: pytest.MonkeyPatch) -> None:
+    """共享池：同键复用实例（#83 第 5 条），引用计数归零才真正关闭（并发关闭语义）。"""
+    import asyncio
+
+    from cnb_agentic_memory.api import SharedClientPool
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    pool = SharedClientPool()
+
+    async def scenario():
+        c1 = await pool.acquire()
+        c2 = await pool.acquire()
+        assert c1 is c2  # 同键复用同一实例（免每请求 TLS 握手）
+        assert len(pool._clients) == 1
+
+        # A 还在用（refs=2），B 的 async with 先退出：条目不删（客户端不关）
+        await pool.release(c1)
+        assert len(pool._clients) == 1
+        assert pool._clients[next(iter(pool._clients))][1] == 1
+
+        # 引用归零才真正移除条目
+        await pool.release(c2)
+        assert len(pool._clients) == 0
+
+        # 移除后再 acquire：新实例
+        c3 = await pool.acquire()
+        assert c3 is not c1
+        await pool.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_shared_client_pool_distinct_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """不同配置键（如每请求头覆盖的 token/repo）各自独立缓存实例。"""
+    import asyncio
+
+    from cnb_agentic_memory.api import SharedClientPool
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    pool = SharedClientPool()
+
+    async def scenario():
+        a = await pool.acquire()
+        b = await pool.acquire(token="other", repo="x/y")
+        assert a is not b
+        # 键含 timeout：不同超时不共享底层 client
+        c = await pool.acquire(timeout=1.0)
+        assert c is not a
+        await pool.release(a)
+        await pool.release(b)
+        await pool.release(c)
+        await pool.aclose()
+
+    asyncio.run(scenario())
