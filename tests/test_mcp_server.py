@@ -731,6 +731,9 @@ def test_whitelist_fixed_no_extension_entry(
     # env 白名单入口已移除：设置也不再生效，白名单仍只有固定条目
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "mem.example.com")
     mcp_server.main(["--transport", "streamable-http"])
+    captured = capsys.readouterr()
+    # 废弃 env 显式告警（非阻塞行级意见：静默失效会让反代部署升级后全量 421 无提示）
+    assert "已随 --allowed-host 移除" in captured.err
     sec = calls[-1]["transport_security"]
     assert not any("example.com" in h for h in sec.allowed_hosts)
     assert not any("example.com" in o for o in sec.allowed_origins)
@@ -772,12 +775,6 @@ def test_main_invalid_cli_port_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(SystemExit) as exc_info:
             mcp_server.main(["--transport", "streamable-http", "--port", bad])
         assert exc_info.value.code == 2
-
-
-def _fw_matched(patterns: list[str], value: str) -> bool:
-    """复现 mcp 框架 TransportSecurityMiddleware 的匹配语义：精确相等，
-    或 ``base:*`` 通配按 ``value.startswith(base + ":")`` 判定（要求值带端口）。"""
-    return value in patterns or any(p.endswith(":*") and value.startswith(p[:-1]) for p in patterns)
 
 
 def test_malformed_host_cli_errors_env_falls_back(

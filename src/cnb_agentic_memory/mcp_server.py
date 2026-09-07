@@ -419,8 +419,7 @@ def parse_host_env(value: str | None) -> str:
     """环境变量 MCP_HOST 兜底解析：畸形值 stderr 告警回落 127.0.0.1，不崩启动。
 
     env default 不经 argparse type 校验，畸形值若不清洗会穿透到 mcp.run
-    裸 traceback 崩启动（复审阻塞项）；告警口径与 --allowed-host 畸形条目
-    一致。
+    裸 traceback 崩启动（复审阻塞项）；CLI 显式传错则直接报错退出。
     """
     stripped = (value or "").strip()
     if not stripped:
@@ -519,6 +518,17 @@ def main(argv: list[str] | None = None) -> None:
         help="HTTP 监听端口，仅 sse/streamable-http 有效（默认 8000）",
     )
     args = parser.parse_args(argv)
+
+    # #85 裁剪 --allowed-host 后的废弃提示：存量部署的该 env 会被无声吞掉，
+    # 反代保留真实 Host 的场景升级后全量 421 且无告警——显式提醒迁移路径
+    if env("MCP_ALLOWED_HOSTS"):
+        print(
+            "警告：CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS 已随 --allowed-host 移除（#85），"
+            "本次启动被忽略；反代部署请改写 Host/Origin（如 proxy_set_header Host localhost; "
+            "Origin "
+            ";）或由代理层完成白名单校验",
+            file=sys.stderr,
+        )
 
     if args.transport != "stdio" and args.host in ("0.0.0.0", "::"):
         # HTTP 模式无内置鉴权，且框架对通配地址不自动开 DNS rebinding 防护；
