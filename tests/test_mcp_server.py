@@ -974,3 +974,11 @@ def test_main_host_port_merged_cli_errors_env_falls_back(
     assert calls[-1]["host"] == "127.0.0.1"
     security = calls[-1]["transport_security"]
     assert not any("0.0.0.0" in h for h in security.allowed_hosts)
+
+    # env 带壳 IPv6：剥壳为裸地址透传（复审致命项：带壳原值直传 uvicorn 启动
+    # 即崩，白名单基名 [::1]:8000 永不匹配 → 全量 421）
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "[::1]:8000")
+    mcp_server.main(["--transport", "streamable-http"])
+    assert calls[-1]["host"] == "::1"
+    security = calls[-1]["transport_security"]
+    assert not any("[::1]:8000" in h for h in security.allowed_hosts)

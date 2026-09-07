@@ -405,10 +405,11 @@ def parse_host(value: str | None) -> str:
         # 空值是「未指定」语义：回落默认地址（沿用既有行为），不算畸形
         return DEFAULT_HOST
     try:
-        validate_listen_host(stripped)
+        # 取校验返回值而非原值：[IPv6]/[IPv6]:port 剥壳为裸地址，带壳原值
+        # 直传 uvicorn 会被当作主机名 sock.bind 即崩（复审致命项）
+        return validate_listen_host(stripped)
     except ValueError as err:
         raise argparse.ArgumentTypeError(f"监听地址无法解析：{stripped!r}（{err}）") from None
-    return stripped
 
 
 def parse_host_env(value: str | None) -> str:
@@ -423,14 +424,14 @@ def parse_host_env(value: str | None) -> str:
         # 空值是「未指定」语义：回落默认地址（test_main_empty_host_env_falls_back 锚定），不告警
         return DEFAULT_HOST
     try:
-        validate_listen_host(stripped)
+        # 取校验返回值而非原值：剥壳语义与 CLI 通道同口径（复审致命项）
+        return validate_listen_host(stripped)
     except ValueError as err:
         print(
             f"警告：CNB_AGENTIC_MEMORY_MCP_HOST {stripped!r} 无法解析（{err}），回落 {DEFAULT_HOST}",
             file=sys.stderr,
         )
         return DEFAULT_HOST
-    return stripped
 
 
 def parse_allowed_hosts(value: str | None) -> list[str]:
