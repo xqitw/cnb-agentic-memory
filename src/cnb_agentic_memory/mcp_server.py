@@ -367,6 +367,10 @@ def validate_listen_host(value: str) -> str:
             raise ValueError("方括号 IPv6 不完整（形如 [::1]）")
         if tail.count(":") > 1 or (tail.startswith(":") and not tail[1:].isdigit()):
             raise ValueError("方括号后只允许跟一个数字端口（形如 [::1]:8000）")
+        if len(tail) > 1:
+            # [IPv6]:port 的端口段不静默丢弃：监听端口由 --port 指定，静默改用
+            # 别的端口会让「服务起在意外地址」且 env 通道无告警（复审 warning）
+            raise ValueError(f"方括号形态不接受端口号（{stripped!r}），端口请用 --port 指定")
         candidate = inner
         if not candidate:
             raise ValueError("方括号内为空")

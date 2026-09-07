@@ -911,7 +911,7 @@ def test_malformed_host_cli_errors_env_falls_back(
 
 
 def test_validate_listen_host_accepts_valid() -> None:
-    """监听地址校验：域名/IPv4/IPv6/[IPv6]/[IPv6]:port 合法，方括号形态返回裸地址。"""
+    """监听地址校验：域名/IPv4/IPv6/[IPv6] 合法，方括号形态返回裸地址（端口段拒绝，端口由 --port 指定）。"""
     from cnb_agentic_memory.mcp_server import validate_listen_host
 
     assert validate_listen_host("myhost") == "myhost"
@@ -921,8 +921,6 @@ def test_validate_listen_host_accepts_valid() -> None:
     assert validate_listen_host("::") == "::"
     assert validate_listen_host("::ffff:127.0.0.1") == "::ffff:127.0.0.1"
     assert validate_listen_host("[::1]") == "::1"
-    assert validate_listen_host("[::1]:8443") == "::1"
-    assert validate_listen_host("[2001:db8::1]:8443") == "2001:db8::1"
 
 
 def test_validate_listen_host_rejects_invalid() -> None:
@@ -945,6 +943,8 @@ def test_validate_listen_host_rejects_invalid() -> None:
         "[myhost]",  # 域名裹方括号
         "[127.0.0.1]",  # IPv4 裹方括号（RFC 3986 方括号仅用于 IPv6）
         "[::1]x",
+        "[::1]:8443",  # 带壳带端口：端口段不静默丢弃（复审 warning），端口用 --port
+        "[2001:db8::1]:8443",
     ]
     for bad in bads:
         with pytest.raises(ValueError):
@@ -975,10 +975,33 @@ def test_main_host_port_merged_cli_errors_env_falls_back(
     security = calls[-1]["transport_security"]
     assert not any("0.0.0.0" in h for h in security.allowed_hosts)
 
-    # env 带壳 IPv6：剥壳为裸地址透传（复审致命项：带壳原值直传 uvicorn 启动
-    # 即崩，白名单基名 [::1]:8000 永不匹配 → 全量 421）
+    # env 带壳 IPv6 带端口：端口段不再静默丢弃，告警回落（复审 warning：
+    # --host [::1]:9000 原先实际落 8000 且 env 通道无告警）
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "[::1]:8000")
     mcp_server.main(["--transport", "streamable-http"])
-    assert calls[-1]["host"] == "::1"
+    captured = capsys.readouterr()
+    assert "无法解析" in captured.err
+    assert calls[-1]["host"] == "127.0.0.1"
     security = calls[-1]["transport_security"]
     assert not any("[::1]:8000" in h for h in security.allowed_hosts)
+
+
+def test_main_bracketed_ipv6_host_stripped(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI 带壳 IPv6 成功路径 main 级锚定：[::1] 剥壳为裸 ::1 透传，白名单基名正确（复审致命项回归 + info 补对称用例）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "streamable-http", "--host", "[::1]"])
+    assert calls[-1]["host"] == "::1"
+    security = calls[-1]["transport_security"]
+    # 白名单基名用裸地址生成，无带壳残留
+    assert "[::1]:*" in security.allowed_hosts
+    assert "[::1]" in security.allowed_hosts
+    assert not any(h.startswith("[::1]:") and h != "[::1]:*" for h in security.allowed_hosts)
+
+    # CLI 带壳带端口：报 argparse 错误 exit 2（端口由 --port 指定，复审 warning）
+    with pytest.raises(SystemExit) as exc_info:
+        mcp_server.main(["--transport", "streamable-http", "--host", "[::1]:8000"])
+    assert exc_info.value.code == 2
