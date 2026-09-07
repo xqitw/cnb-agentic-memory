@@ -697,17 +697,6 @@ def test_env_var_names_documented_correctly() -> None:
     assert "CNB_AGENTIC_MEMORY_MCP_PORT" in docs
 
 
-def test_parse_allowed_hosts() -> None:
-    """--allowed-host/env 白名单解析：逗号分隔，空/空白返回空列表。"""
-    from cnb_agentic_memory.mcp_server import parse_allowed_hosts
-
-    assert parse_allowed_hosts(None) == []
-    assert parse_allowed_hosts("") == []
-    assert parse_allowed_hosts("  ") == []
-    assert parse_allowed_hosts("a.com") == ["a.com"]
-    assert parse_allowed_hosts("a.com, b.com ,c.io") == ["a.com", "b.com", "c.io"]
-
-
 def test_security_settings_origin_and_ipv6(monkeypatch: pytest.MonkeyPatch) -> None:
     """防护白名单：Origin 随 Host 同源生成（复审 warning1）；IPv6 监听加方括号（warning2）。"""
     calls: list[dict] = []
@@ -727,43 +716,42 @@ def test_security_settings_origin_and_ipv6(monkeypatch: pytest.MonkeyPatch) -> N
     assert "http://[2001:db8::1]:*" in sec6.allowed_origins
 
 
-def test_allowed_host_cli_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """--allowed-host 追加白名单（复审 info：反代保留真实 Host 的部署自救口）。"""
+def test_whitelist_fixed_no_extension_entry(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """白名单固定为 localhost 族 + 监听地址（#85 裁剪）：--allowed-host 已移除，未知域名被拒。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
-    mcp_server.main(
-        [
-            "--transport",
-            "streamable-http",
-            "--allowed-host",
-            "mem.example.com",
-            "--allowed-host",
-            "cdn.example.org",
-        ]
-    )
-    sec = calls[-1]["transport_security"]
-    assert "mem.example.com:*" in sec.allowed_hosts
-    assert "cdn.example.org:*" in sec.allowed_hosts
-    # 反代对外域名同时放行 http/https Origin（HTTPS 反代入浏览器请求不被 403）
-    assert "https://mem.example.com:*" in sec.allowed_origins
-    assert "http://mem.example.com:*" in sec.allowed_origins
-    # 默认端口（443/80）下浏览器 Origin/Host 不序列化端口，而框架对 :* 通配
-    # 的匹配要求值带显式端口（startswith(base + ":")），故必须有无端口精确形态
-    assert "mem.example.com" in sec.allowed_hosts
-    assert "https://mem.example.com" in sec.allowed_origins
-    assert "http://mem.example.com" in sec.allowed_origins
-    # 本机直连口径仍为 http 单一 scheme
-    assert "http://localhost:*" in sec.allowed_origins
-    assert "https://localhost:*" not in sec.allowed_origins
+    # CLI --allowed-host 参数已移除：argparse 直接报错 exit 2
+    with pytest.raises(SystemExit) as exc_info:
+        mcp_server.main(["--transport", "streamable-http", "--allowed-host", "mem.example.com"])
+    assert exc_info.value.code == 2
 
-    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "env.example.com, dns.example.net")
+    # env 白名单入口已移除：设置也不再生效，白名单仍只有固定条目
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "mem.example.com")
     mcp_server.main(["--transport", "streamable-http"])
-    sec2 = calls[-1]["transport_security"]
-    assert "env.example.com:*" in sec2.allowed_hosts
-    assert "dns.example.net:*" in sec2.allowed_hosts
-    assert "env.example.com" in sec2.allowed_hosts
-    assert "https://env.example.com" in sec2.allowed_origins
+    sec = calls[-1]["transport_security"]
+    assert not any("example.com" in h for h in sec.allowed_hosts)
+    assert not any("example.com" in o for o in sec.allowed_origins)
+    # 固定条目齐全：localhost 族 + 监听地址，双形态（:* 通配 + 无端口精确）
+    assert "localhost:*" in sec.allowed_hosts
+    assert "localhost" in sec.allowed_hosts
+    assert "127.0.0.1:*" in sec.allowed_hosts
+    assert "[::1]:*" in sec.allowed_hosts
+    assert "http://localhost:*" in sec.allowed_origins
+    assert "http://127.0.0.1" in sec.allowed_origins
+
+
+def test_whitelist_host_base() -> None:
+    """监听地址转白名单基名：裸 IPv6 裹方括号，域名/IPv4 原样（#85 裁剪后仅此一职责）。"""
+    from cnb_agentic_memory.mcp_server import whitelist_host_base
+
+    assert whitelist_host_base("myhost") == "myhost"
+    assert whitelist_host_base("127.0.0.1") == "127.0.0.1"
+    assert whitelist_host_base("::1") == "[::1]"
+    assert whitelist_host_base("2001:db8::1") == "[2001:db8::1]"
+    assert whitelist_host_base("[::1]") == "[::1]"  # 已带壳（防御性，正常入口不会传入）
 
 
 def test_resolve_overrides_rejects_bare_header_names() -> None:
@@ -786,102 +774,10 @@ def test_main_invalid_cli_port_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         assert exc_info.value.code == 2
 
 
-def test_allowed_host_default_not_mutated_across_parses(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """--allowed-host 的 default 不可被 append 原地累积：多次 parse_args 互不污染。"""
-    calls: list[dict] = []
-    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
-    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "env.example.com")
-
-    # 第一次带 CLI 追加，第二次不带：env 白名单不得残留第一次的追加项
-    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "cli.example.com"])
-    mcp_server.main(["--transport", "streamable-http"])
-    sec = calls[-1]["transport_security"]
-    assert "env.example.com:*" in sec.allowed_hosts
-    assert "cli.example.com:*" not in sec.allowed_hosts
-
-
 def _fw_matched(patterns: list[str], value: str) -> bool:
     """复现 mcp 框架 TransportSecurityMiddleware 的匹配语义：精确相等，
     或 ``base:*`` 通配按 ``value.startswith(base + ":")`` 判定（要求值带端口）。"""
     return value in patterns or any(p.endswith(":*") and value.startswith(p[:-1]) for p in patterns)
-
-
-def test_normalize_allowed_host() -> None:
-    """四种输入形态归一化为同一基名；host:port 不被误判为 IPv6 裹括号（复审致命项）。"""
-    from cnb_agentic_memory.mcp_server import normalize_allowed_host
-
-    assert normalize_allowed_host("mem.example.com") == "mem.example.com"
-    assert normalize_allowed_host("mem.example.com:*") == "mem.example.com"
-    # 关键回归：host:port 不得裹方括号（曾生成 [mem.example.com:8443] 永不匹配）
-    assert normalize_allowed_host("mem.example.com:8443") == "mem.example.com"
-    assert normalize_allowed_host("127.0.0.1") == "127.0.0.1"
-    assert normalize_allowed_host("2001:db8::1") == "[2001:db8::1]"
-    assert normalize_allowed_host("[2001:db8::1]") == "[2001:db8::1]"
-    assert normalize_allowed_host("[::1]:8443") == "[::1]"
-
-
-def test_allowed_host_matching_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
-    """白名单按框架匹配语义验证：默认端口（无端口值）与显式端口（:* 通配）均命中，恶意域名仍拒。"""
-    calls: list[dict] = []
-    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
-
-    # host:port 输入形态（非标准端口反代保留完整 Host）
-    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "mem.example.com:8443"])
-    sec = calls[-1]["transport_security"]
-    assert "[mem.example.com" not in "".join(sec.allowed_hosts)
-    assert _fw_matched(sec.allowed_hosts, "mem.example.com:8443")
-    assert _fw_matched(sec.allowed_hosts, "mem.example.com")
-    assert _fw_matched(sec.allowed_origins, "https://mem.example.com:8443")
-    assert _fw_matched(sec.allowed_origins, "https://mem.example.com")
-    assert not _fw_matched(sec.allowed_hosts, "evil.example.com:8443")
-
-    # 显式 :* 输入形态同样生成无端口精确形态（默认端口反代不再 403/421）
-    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "mem.example.com:*"])
-    sec2 = calls[-1]["transport_security"]
-    assert _fw_matched(sec2.allowed_hosts, "mem.example.com")
-    assert _fw_matched(sec2.allowed_origins, "https://mem.example.com")
-
-    # 默认端口直连：Host/Origin 不带端口（如 --port 80），localhost 族精确形态命中
-    mcp_server.main(["--transport", "streamable-http", "--port", "80"])
-    sec3 = calls[-1]["transport_security"]
-    assert _fw_matched(sec3.allowed_hosts, "127.0.0.1")
-    assert _fw_matched(sec3.allowed_origins, "http://localhost")
-    assert not _fw_matched(sec3.allowed_hosts, "evil.example.com")
-
-
-def test_normalize_allowed_host_rejects_malformed() -> None:
-    """畸形条目（端口段非数字、全角冒号）raise ValueError：静默放行会永不生效。"""
-    from cnb_agentic_memory.mcp_server import normalize_allowed_host
-
-    for bad in ("mem.example.com:", "mem.example.com:abc", "mem.example.com:-1", "mem.example.com：8443"):
-        with pytest.raises(ValueError):
-            normalize_allowed_host(bad)
-
-
-def test_allowed_host_cli_comma_split_and_malformed_warn(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """CLI 单值内逗号拆分（与 env 口径一致）；畸形条目 stderr 告警跳过，不崩启动。"""
-    calls: list[dict] = []
-    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
-
-    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "a.example.com:8443,b.example.org"])
-    sec = calls[-1]["transport_security"]
-    # 逗号串不得整串成条目（复审致命项：整串永不匹配 → 全量 421）
-    assert "a.example.com:8443,b.example.org" not in sec.allowed_hosts
-    assert _fw_matched(sec.allowed_hosts, "a.example.com:8443")
-    assert _fw_matched(sec.allowed_hosts, "b.example.org")
-    assert _fw_matched(sec.allowed_origins, "https://b.example.org")
-
-    # 畸形条目：stderr 告警 + 跳过，合法条目照常生效
-    mcp_server.main(["--transport", "streamable-http", "--allowed-host", "good.example.com,bad.example.com:"])
-    captured = capsys.readouterr()
-    assert "无法解析" in captured.err
-    sec2 = calls[-1]["transport_security"]
-    assert _fw_matched(sec2.allowed_hosts, "good.example.com")
-    assert not _fw_matched(sec2.allowed_hosts, "bad.example.com")
 
 
 def test_malformed_host_cli_errors_env_falls_back(
@@ -902,12 +798,6 @@ def test_malformed_host_cli_errors_env_falls_back(
     captured = capsys.readouterr()
     assert "无法解析" in captured.err
     assert calls[-1]["host"] == "127.0.0.1"
-
-    # ":*" 解析为空串：与其他畸形条目同口径 stderr 告警跳过
-    mcp_server.main(["--transport", "streamable-http", "--allowed-host", ":*"])
-    captured2 = capsys.readouterr()
-    assert "解析为空" in captured2.err
-    assert not any("解析为空" in p or p == ":*" for p in calls[-1]["transport_security"].allowed_hosts)
 
 
 def test_validate_listen_host_accepts_valid() -> None:

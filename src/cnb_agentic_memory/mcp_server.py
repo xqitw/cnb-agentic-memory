@@ -338,11 +338,10 @@ DEFAULT_HOST = "127.0.0.1"
 def validate_listen_host(value: str) -> str:
     """校验监听地址（--host），返回清洗后的值；非法 raise ValueError。
 
-    监听地址与 --allowed-host 白名单条目是两种语义：前者要的是整体合法的
+    监听地址与白名单条目是两种语义：前者要的是整体合法的
     地址（域名 / IPv4 / IPv6 / [IPv6]），不允许 host:port 合并形态——端口由
     --port 单独指定，合并形态会被 uvicorn 原样透传 getaddrinfo 失败、启动
-    即崩；且 normalize_allowed_host 判其「合法」还会把剥壳基名混入白名单。
-    故按监听地址语义独立判别，不复用 normalize（复审阻塞项）：
+    即崩；按监听地址语义独立判别（复审阻塞项）：
 
     1. 先 `ipaddress.ip_address()` 判裸 IP（含 `::1`、`0.0.0.0`、`::`）——
        判别顺序必须先于拆分，否则 `::1` 会被 rpartition 误拆成 `::` + `1`；
@@ -438,46 +437,17 @@ def parse_host_env(value: str | None) -> str:
         return DEFAULT_HOST
 
 
-def parse_allowed_hosts(value: str | None) -> list[str]:
-    """解析额外 Host 白名单（逗号分隔，空/空白返回空列表）。
+def whitelist_host_base(host: str) -> str:
+    """把监听地址转为白名单「Host 基名」：裸 IPv6 裹方括号（RFC 3986），其余原样。
 
-    用于反代保留真实 Host 域名的部署：把对外域名追加进 DNS rebinding 防护
-    白名单，否则标准反代转发（proxy_set_header Host $host）会被 421 拒绝。
+    仅服务 --host 的白名单生成这一个职责；原 --allowed-host 条目的多形态
+    归一化（host:port / host:* 剥壳等）随参数裁剪一并移除（#85）。
+    调用前 host 已过 validate_listen_host，此处只做形态转换，不校验。
     """
-    if not value:
-        return []
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def normalize_allowed_host(entry: str) -> str:
-    """把 --allowed-host 条目归一化为「Host 基名」（IPv6 裹方括号）。
-
-    纯域名 / ``host:*`` / ``host:port`` / ``[IPv6]`` 四种输入形态统一产出同一
-    基名，由调用方按需生成 :* 端口通配与无端口精确两种白名单形态。
-    ``host:port`` 必须先经 ``ipaddress`` 判别是否真 IPv6，否则裸 IPv6 带
-    端口之外的 ``mem.example.com:8443`` 会被「含冒号即裹括号」误判成
-    ``[mem.example.com:8443]`` 而永不匹配（复审致命项）。
-
-    畸形条目（端口段非数字、全角冒号）raise ValueError：此类条目在框架
-    匹配语义下永不生效，静默放行原样会让用户误以为已配置成功（复审建议）。
-    """
-    value = entry.strip()
-    if value.endswith(":*"):
-        value = value[:-2]
-    if value.startswith("[") and value.endswith("]"):
-        value = value[1:-1]
     try:
-        return f"[{value}]" if ipaddress.ip_address(value).version == 6 else value
+        return f"[{host}]" if ipaddress.ip_address(host).version == 6 else host
     except ValueError:
-        pass
-    if "：" in value:
-        raise ValueError("含全角冒号，请改用半角（形如 host 或 host:port）")
-    if ":" in value:
-        host, _, port = value.rpartition(":")
-        if port.isdigit() and host:
-            return normalize_allowed_host(host)
-        raise ValueError("端口段必须为数字（形如 host 或 host:port）")
-    return value
+        return host
 
 
 def parse_transport(value: str | None) -> str:
@@ -548,15 +518,6 @@ def main(argv: list[str] | None = None) -> None:
         default=parse_port(env("MCP_PORT")),
         help="HTTP 监听端口，仅 sse/streamable-http 有效（默认 8000）",
     )
-    parser.add_argument(
-        "--allowed-host",
-        action="append",
-        # 拷贝一份再追加双保险：argparse 自 3.9 起 action="append" 会先拷贝
-        # default 再追加（bpo-33519），本项目 requires-python >= 3.11 下不会
-        # 原地修改；显式拷贝防御未来行为回退，多次 parse_args 互不污染
-        default=list(parse_allowed_hosts(env("MCP_ALLOWED_HOSTS"))),
-        help="DNS rebinding 防护额外放行的 Host 白名单（可多次传入，如反代转发的对外域名；环境变量 CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS，逗号分隔）",
-    )
     args = parser.parse_args(argv)
 
     if args.transport != "stdio" and args.host in ("0.0.0.0", "::"):
@@ -573,55 +534,22 @@ def main(argv: list[str] | None = None) -> None:
     else:
         # sse / streamable-http：host/port 透传给 MCP 框架的 uvicorn 启动参数。
         # 框架仅对 localhost 自动开 DNS rebinding 防护，其他监听地址显式透传
-        # TransportSecuritySettings 保持防护常开。白名单 = localhost 族 + 监听
-        # 地址直连形式 + --allowed-host 追加项（反代保留真实 Host 的部署场景）。
+        # TransportSecuritySettings 保持防护常开。白名单固定为 localhost 族 +
+        # 监听地址直连形式，不提供扩展入口：对外部署一律置于反代之后，访问
+        # 控制与 Host 白名单属代理层职责（扩展白名单入口已按 #85 裁剪——其
+        # 输入形态 × 匹配语义矩阵的维护成本远超防御价值，见 PR !84 八轮复审）。
         from mcp.server.transport_security import TransportSecuritySettings
 
-        # 白名单形态统一生成（复审整改）：框架对 :* 通配的匹配要求 Host/Origin
-        # 值带显式端口（startswith(base + ":")），而浏览器在默认端口（80/443）下
-        # 不序列化端口（WHATWG origin 序列化），故每个基名同时生成 :* 端口通配
-        # （非标准端口兜底）与无端口精确（默认端口场景）两种 Host 条目，恶意
-        # 域名仍被精确匹配语义拒之门外，防护面未放宽。
+        # 框架对 :* 通配的匹配要求 Host/Origin 值带显式端口（startswith(base + ":")），
+        # 而浏览器在默认端口（80/443）下不序列化端口（WHATWG origin 序列化），故每个
+        # 基名同时生成 :* 端口通配（非标准端口兜底）与无端口精确（默认端口场景）两种
+        # Host 条目，恶意域名仍被精确匹配语义拒之门外。
         host_bases = dict.fromkeys(
-            ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", normalize_allowed_host(args.host)]
+            ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", whitelist_host_base(args.host)]
         )
-        extra_bases: list[str] = []
-        # CLI 单值内逗号同样拆分：文档承诺「可多次传入或逗号分隔」，逗号分隔
-        # 原先只对 env 生效，CLI 整串成条目在框架匹配语义下永不生效（全量 421）。
-        # env default 已拆好，无逗号再拆一次无副作用
-        extra_values = [
-            piece.strip() for raw in args.allowed_host for piece in raw.split(",") if piece.strip()
-        ]
-        for extra in extra_values:
-            try:
-                base = normalize_allowed_host(extra)
-            except ValueError as err:
-                # 畸形条目（端口段非数字等）框架语义下永不生效，告警跳过而非
-                # 静默放行或崩启动（与 env 异常值防御口径一致）
-                print(f"警告：--allowed-host 条目 {extra!r} 无法解析（{err}），已忽略", file=sys.stderr)
-                continue
-            if not base:
-                # ":*" 剥壳后为空串：同样永不生效的配置笔误，与其他畸形条目同口径告警
-                print(f"警告：--allowed-host 条目 {extra!r} 解析为空，已忽略", file=sys.stderr)
-                continue
-            if base not in extra_bases:
-                extra_bases.append(base)
-        # Origin 口径：本机直连为纯 HTTP（uvicorn 无 TLS）单 scheme；--allowed-host
-        # 是反代对外域名，反代入口多为 HTTPS（浏览器 Origin 带 https scheme），
-        # 追加域名放行 http/https 双 scheme，均含通配与精确两形态
-        allowed_hosts = (
-            [f"{b}:*" for b in host_bases] + list(host_bases) + [f"{b}:*" for b in extra_bases] + extra_bases
-        )
-        allowed_origins = (
-            [f"http://{b}" for b in host_bases]
-            + [f"http://{b}:*" for b in host_bases]
-            + [
-                f"{scheme}://{b}{':*' if with_port else ''}"
-                for b in extra_bases
-                for with_port in (False, True)
-                for scheme in ("http", "https")
-            ]
-        )
+        # Origin 口径：本机直连为纯 HTTP（uvicorn 无 TLS）单 scheme，含通配与精确两形态
+        allowed_hosts = [f"{b}:*" for b in host_bases] + list(host_bases)
+        allowed_origins = [f"http://{b}" for b in host_bases] + [f"http://{b}:*" for b in host_bases]
 
         security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
