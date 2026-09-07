@@ -908,3 +908,69 @@ def test_malformed_host_cli_errors_env_falls_back(
     captured2 = capsys.readouterr()
     assert "解析为空" in captured2.err
     assert not any("解析为空" in p or p == ":*" for p in calls[-1]["transport_security"].allowed_hosts)
+
+
+def test_validate_listen_host_accepts_valid() -> None:
+    """监听地址校验：域名/IPv4/IPv6/[IPv6]/[IPv6]:port 合法，方括号形态返回裸地址。"""
+    from cnb_agentic_memory.mcp_server import validate_listen_host
+
+    assert validate_listen_host("myhost") == "myhost"
+    assert validate_listen_host("127.0.0.1") == "127.0.0.1"
+    assert validate_listen_host("0.0.0.0") == "0.0.0.0"
+    assert validate_listen_host("::1") == "::1"
+    assert validate_listen_host("::") == "::"
+    assert validate_listen_host("::ffff:127.0.0.1") == "::ffff:127.0.0.1"
+    assert validate_listen_host("[::1]") == "::1"
+    assert validate_listen_host("[::1]:8443") == "::1"
+    assert validate_listen_host("[2001:db8::1]:8443") == "2001:db8::1"
+
+
+def test_validate_listen_host_rejects_invalid() -> None:
+    """监听地址校验：host:port 合并/全角冒号/畸形括号/域名裹括号/IPv4 裹括号全部拒绝。"""
+    import pytest
+
+    from cnb_agentic_memory.mcp_server import validate_listen_host
+
+    bads = [
+        "myhost:8000",  # host:port 合并形态（复审阻塞项主场景）
+        "0.0.0.0:8000",  # env 通道混入白名单的场景
+        "myhost:abc",
+        "127.0.0.1：8443",  # 全角冒号
+        "[::1",  # 方括号不完整
+        "[::1]:",  # 方括号后空端口
+        "[]",
+        "[::1]:abc",
+        "a:b:c",
+        ":8000",
+        "[myhost]",  # 域名裹方括号
+        "[127.0.0.1]",  # IPv4 裹方括号（RFC 3986 方括号仅用于 IPv6）
+        "[::1]x",
+    ]
+    for bad in bads:
+        with pytest.raises(ValueError):
+            validate_listen_host(bad)
+    with pytest.raises(ValueError):
+        validate_listen_host("")
+
+
+def test_main_host_port_merged_cli_errors_env_falls_back(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """host:port 合并形态端到端：CLI exit 2；env 告警回落且基名不混入白名单（复审阻塞项）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    # CLI：--host myhost:8000（把端口并进 host 的最常见敲错）报 argparse 错误 exit 2
+    with pytest.raises(SystemExit) as exc_info:
+        mcp_server.main(["--transport", "streamable-http", "--host", "myhost:8000"])
+    assert exc_info.value.code == 2
+
+    # env：MCP_HOST=0.0.0.0:8000（容器编排端口映射常见写法）告警回落 127.0.0.1，
+    # 0.0.0.0 基名不混入白名单（旧实现会把白名单防护打到失守）
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "0.0.0.0:8000")
+    mcp_server.main(["--transport", "streamable-http"])
+    captured = capsys.readouterr()
+    assert "无法解析" in captured.err
+    assert calls[-1]["host"] == "127.0.0.1"
+    security = calls[-1]["transport_security"]
+    assert not any("0.0.0.0" in h for h in security.allowed_hosts)

@@ -58,7 +58,7 @@ cnb-agentic-memory-mcp --transport sse --host 0.0.0.0 --port 8000
 | 参数 | 环境变量兜底 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `--transport` | `CNB_AGENTIC_MEMORY_MCP_TRANSPORT` | `stdio` | 传输协议：`stdio` / `sse` / `streamable-http` |
-| `--host` | `CNB_AGENTIC_MEMORY_MCP_HOST` | `127.0.0.1` | HTTP 监听地址，仅 sse/streamable-http 有效；空值/空白回落默认；CLI 畸形地址直接报错，env 畸形值告警回落默认；对外暴露时用 `0.0.0.0`（须置于反代之后） |
+| `--host` | `CNB_AGENTIC_MEMORY_MCP_HOST` | `127.0.0.1` | HTTP 监听地址，仅 sse/streamable-http 有效；接受域名 / IPv4 / IPv6 / `[IPv6]`；空值/空白回落默认；CLI 畸形地址直接报错，env 畸形值告警回落默认；不接受 `host:port` 合并形态（端口由 `--port` 指定）；对外暴露时用 `0.0.0.0`（须置于反代之后） |
 | `--port` | `CNB_AGENTIC_MEMORY_MCP_PORT` | `8000` | HTTP 监听端口，仅 sse/streamable-http 有效；CLI 传非法/越界值直接报错退出（环境变量异常值静默回落默认） |
 | `--allowed-host` | `CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS` | 无 | DNS rebinding 防护额外放行的 Host 白名单（可多次传入或逗号分隔）。反代按最佳实践保留真实 Host（`proxy_set_header Host $host`）部署时，须把对外域名加入白名单，否则会被 421 拒绝；输入支持纯域名 / `host:port` / `host:*` / `[IPv6]` 形态（可多次传入或单值内逗号分隔；`ipaddress` 判别归一化，IPv6 自动裹方括号；畸形条目如端口段非数字会 stderr 告警并跳过）；每个域名自动同时生成 `:*` 端口通配（非标准端口兜底）与无端口精确（默认 443/80 下浏览器不序列化端口）两种 Host 条目，并放行 http/https 双 scheme Origin |
 

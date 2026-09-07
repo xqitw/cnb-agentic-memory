@@ -335,39 +335,102 @@ _TRANSPORTS = ("stdio", "sse", "streamable-http")
 DEFAULT_HOST = "127.0.0.1"
 
 
+def validate_listen_host(value: str) -> str:
+    """校验监听地址（--host），返回清洗后的值；非法 raise ValueError。
+
+    监听地址与 --allowed-host 白名单条目是两种语义：前者要的是整体合法的
+    地址（域名 / IPv4 / IPv6 / [IPv6]），不允许 host:port 合并形态——端口由
+    --port 单独指定，合并形态会被 uvicorn 原样透传 getaddrinfo 失败、启动
+    即崩；且 normalize_allowed_host 判其「合法」还会把剥壳基名混入白名单。
+    故按监听地址语义独立判别，不复用 normalize（复审阻塞项）：
+
+    1. 先 `ipaddress.ip_address()` 判裸 IP（含 `::1`、`0.0.0.0`、`::`）——
+       判别顺序必须先于拆分，否则 `::1` 会被 rpartition 误拆成 `::` + `1`；
+    2. `[IPv6]` 剥方括号后同样按裸 IP 校验，返回裸 IPv6（getaddrinfo 不认
+       方括号形态，uvicorn 需裸地址）；
+    3. 其余含冒号值 `rpartition(":")` 拆分：端口段纯数字即视为 host:port
+       合并形态，拒绝；其他含冒号形态一并拒绝（域名不含冒号）。
+
+    全角冒号、方括号不完整、空串均拒绝。
+    """
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("监听地址为空")
+    if "：" in stripped:
+        raise ValueError("含全角冒号，请改用半角")
+    candidate = stripped
+    bracketed = candidate.startswith("[")
+    if bracketed:
+        # [IPv6] 与 [IPv6]:port：以 "]" 为界剥壳与端口，再按裸 IP 校验
+        inner, sep, tail = candidate[1:].partition("]")
+        if not sep or (tail and not tail.startswith(":")):
+            raise ValueError("方括号 IPv6 不完整（形如 [::1]）")
+        if tail.count(":") > 1 or (tail.startswith(":") and not tail[1:].isdigit()):
+            raise ValueError("方括号后只允许跟一个数字端口（形如 [::1]:8000）")
+        candidate = inner
+        if not candidate:
+            raise ValueError("方括号内为空")
+    try:
+        ip = ipaddress.ip_address(candidate)
+    except ValueError:
+        ip = None
+    if ip is not None:
+        if bracketed and ip.version != 6:
+            # 方括号只用于 IPv6（RFC 3986），[127.0.0.1] 这类 IPv4 裹括号非法
+            raise ValueError("方括号内须为 IPv6 地址，IPv4 不裹方括号")
+        return candidate
+    if ":" in candidate:
+        host, _, port = candidate.rpartition(":")
+        if port.isdigit() and host:
+            raise ValueError(f"监听地址不接受 host:port 合并形态（{stripped!r}），端口请用 --port 指定")
+        raise ValueError("IPv6 或含冒号地址不完整")
+    if bracketed:
+        # 方括号只用于 IPv6（RFC 3986），[myhost] 这类域名裹括号非法
+        raise ValueError("方括号内须为合法 IPv6 地址")
+    return candidate
+
+
 def parse_host(value: str | None) -> str:
-    """CLI --host 解析：strip，空值回落 127.0.0.1，畸形地址报 argparse 错误（exit 2）。
+    """CLI --host 解析：按监听地址语义校验，空值回落 127.0.0.1，畸形报 argparse 错误（exit 2）。
 
     空串透传 uvicorn 会绑定全部网卡（等效 0.0.0.0），却绕过通配安全提醒，
-    故与 parse_transport/parse_port 同口径清洗。畸形 host:port/全角冒号
-    在白名单归一化下永不生效，CLI 显式传错应立即暴露（与 parse_port_strict
-    同理）；环境变量兜底走 parse_host_env，告警回落不崩启动。
+    故与 parse_transport/parse_port 同口径清洗。host:port 合并形态（把端口
+    并进 host 的常见敲错）按监听地址语义拒绝，不复用白名单归一化（复审
+    阻塞项：normalize 判其合法，CLI 不报错但 uvicorn 启动即崩，env 通道
+    还会把剥壳基名混入白名单）。环境变量兜底走 parse_host_env，告警回落
+    不崩启动。
     """
     stripped = (value or "").strip()
+    if not stripped:
+        # 空值是「未指定」语义：回落默认地址（沿用既有行为），不算畸形
+        return DEFAULT_HOST
     try:
-        normalize_allowed_host(stripped)
+        validate_listen_host(stripped)
     except ValueError as err:
         raise argparse.ArgumentTypeError(f"监听地址无法解析：{stripped!r}（{err}）") from None
-    return stripped or DEFAULT_HOST
+    return stripped
 
 
 def parse_host_env(value: str | None) -> str:
     """环境变量 MCP_HOST 兜底解析：畸形值 stderr 告警回落 127.0.0.1，不崩启动。
 
-    env default 不经 argparse type 校验，畸形值若不清洗会穿透到白名单
-    归一化裸 traceback 崩启动（复审阻塞项）；告警口径与 --allowed-host
-    畸形条目一致。
+    env default 不经 argparse type 校验，畸形值若不清洗会穿透到 mcp.run
+    裸 traceback 崩启动（复审阻塞项）；告警口径与 --allowed-host 畸形条目
+    一致。
     """
     stripped = (value or "").strip()
+    if not stripped:
+        # 空值是「未指定」语义：回落默认地址（test_main_empty_host_env_falls_back 锚定），不告警
+        return DEFAULT_HOST
     try:
-        normalize_allowed_host(stripped)
+        validate_listen_host(stripped)
     except ValueError as err:
         print(
             f"警告：CNB_AGENTIC_MEMORY_MCP_HOST {stripped!r} 无法解析（{err}），回落 {DEFAULT_HOST}",
             file=sys.stderr,
         )
         return DEFAULT_HOST
-    return stripped or DEFAULT_HOST
+    return stripped
 
 
 def parse_allowed_hosts(value: str | None) -> list[str]:
