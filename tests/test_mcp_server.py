@@ -931,6 +931,9 @@ def test_require_headers_stdio_unaffected(monkeypatch: pytest.MonkeyPatch) -> No
     """stdio 无请求头是常态：开关开启下 ctx=None 仍回落环境变量，不自杀。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+    # 回落路径构造 CNBApiClient 需要服务端凭据 env 完整（CI 无真实凭据，显式注入）
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     mcp_server.main(["--transport", "stdio", "--require-headers"])
     assert mcp_server._require_headers is True
@@ -943,6 +946,8 @@ def test_require_headers_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
     mcp_server.main(["--transport", "streamable-http"])
     assert mcp_server._require_headers is False
     client = mcp_server._client(_ctx_of({"user-agent": "anonymous"}))
