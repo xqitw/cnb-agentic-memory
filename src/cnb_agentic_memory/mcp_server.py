@@ -525,8 +525,7 @@ def main(argv: list[str] | None = None) -> None:
         print(
             "警告：CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS 已随 --allowed-host 移除（#85），"
             "本次启动被忽略；反代部署请改写 Host/Origin（如 proxy_set_header Host localhost; "
-            "Origin "
-            ";）或由代理层完成白名单校验",
+            'proxy_set_header Origin "";）或由代理层完成白名单校验',
             file=sys.stderr,
         )
 
