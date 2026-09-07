@@ -60,10 +60,12 @@ cnb-agentic-memory-mcp --transport sse --host 0.0.0.0 --port 8000
 | `--transport` | `CNB_AGENTIC_MEMORY_MCP_TRANSPORT` | `stdio` | 传输协议：`stdio` / `sse` / `streamable-http` |
 | `--host` | `CNB_AGENTIC_MEMORY_MCP_HOST` | `127.0.0.1` | HTTP 监听地址，仅 sse/streamable-http 有效；接受域名 / IPv4 / IPv6 / `[IPv6]`；空值/空白回落默认；CLI 畸形地址直接报错，env 畸形值告警回落默认；不接受 `host:port` 与 `[IPv6]:port` 合并形态（端口由 `--port` 指定）；对外暴露时用 `0.0.0.0`（须置于反代之后） |
 | `--port` | `CNB_AGENTIC_MEMORY_MCP_PORT` | `8000` | HTTP 监听端口，仅 sse/streamable-http 有效；CLI 传非法/越界值直接报错退出（环境变量异常值静默回落默认） |
+| `--require-headers` | `CNB_AGENTIC_MEMORY_REQUIRE_HEADERS` | 关闭 | 强制要求凭据头：HTTP 模式下凭据头（`X-CNB-Token`/`X-CNB-Repo`）不齐的请求直接拒绝，不回落服务端环境变量凭据——多用户共享部署防匿名调用间接使用服务端凭据；stdio 不受影响（无请求头是常态）；env 值 `1`/`true`/`yes`/`on` 开启 |
 
 > 安全提示：HTTP transport 无内置鉴权，务必配合反向代理/网关做访问控制与
 > Token 校验后再对外暴露，避免 `CNB_AGENTIC_MEMORY_TOKEN` 凭据被任意调用方
-> 间接使用。
+> 间接使用。多用户共享部署（每请求凭据头隔离）建议加 `--require-headers`
+> 强制凭据头，杜绝匿名请求回落服务端环境变量凭据。
 >
 > **对外部署（反代）**：程序端 DNS rebinding 防护白名单固定为本机地址
 > （localhost 族 + `--host` 监听地址），不提供扩展入口（原 `--allowed-host`

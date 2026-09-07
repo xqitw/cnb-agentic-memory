@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import httpx
 import pytest
 import respx
+from mcp.server.mcpserver.context import Context
 
 import cnb_agentic_memory.mcp_server as mcp_server
 from cnb_agentic_memory import __version__
@@ -894,3 +896,62 @@ def test_main_bracketed_ipv6_host_stripped(
     with pytest.raises(SystemExit) as exc_info:
         mcp_server.main(["--transport", "streamable-http", "--host", "[::1]:8000"])
     assert exc_info.value.code == 2
+
+
+class _FakeCtx:
+    """最小 Context 替身：仅提供 _client 用到的 headers 属性。"""
+
+    def __init__(self, headers: dict[str, str] | None = None) -> None:
+        self.headers = headers
+
+
+def _ctx_of(headers: dict[str, str] | None) -> Context:
+    """_FakeCtx → Context 的类型收口（测试替身只实现 _client 实际读取的属性）。"""
+    return cast(Context, _FakeCtx(headers))
+
+
+def test_require_headers_rejects_anonymous_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--require-headers 开启：HTTP 无凭据头请求被拒（MemoryRuleError），凭据齐全放行（#83 建议第 2 条）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "streamable-http", "--require-headers"])
+    assert mcp_server._require_headers is True
+
+    # 无凭据头：拒绝且不回落环境变量凭据
+    with pytest.raises(mcp_server.MemoryRuleError, match="强制凭据头"):
+        mcp_server._client(_ctx_of({"user-agent": "anonymous"}))
+
+    # 凭据头齐全：正常放行
+    client = mcp_server._client(_ctx_of({"x-cnb-token": "t", "x-cnb-repo": "g/r"}))
+    assert client is not None
+
+
+def test_require_headers_stdio_unaffected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """stdio 无请求头是常态：开关开启下 ctx=None 仍回落环境变量，不自杀。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "stdio", "--require-headers"])
+    assert mcp_server._require_headers is True
+    client = mcp_server._client(None)
+    assert client is not None
+
+
+def test_require_headers_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认关闭（兼容旧行为）：无开关时无凭据头请求照常回落环境变量；非法 env 值回落关闭，truthy 开启。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
+
+    mcp_server.main(["--transport", "streamable-http"])
+    assert mcp_server._require_headers is False
+    client = mcp_server._client(_ctx_of({"user-agent": "anonymous"}))
+    assert client is not None
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "not-a-bool")
+    mcp_server.main(["--transport", "streamable-http"])
+    assert mcp_server._require_headers is False
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "1")
+    mcp_server.main(["--transport", "streamable-http"])
+    assert mcp_server._require_headers is True
