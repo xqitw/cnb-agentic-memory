@@ -387,8 +387,9 @@ def test_keyword_search_rejects_empty(monkeypatch):
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_keyword_search")
-    with pytest.raises(Exception, match="检索词不能为空"):
-        asyncio.run(tool.fn(query="   "))
+    # _tool_guard 统一出口：MemoryRuleError 转为 {"error": ...} JSON 结果文本（客户端可读修复指引）
+    result = asyncio.run(tool.fn(query="   "))
+    assert "检索词不能为空" in result
 
 
 def test_main_transport_cli_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -926,9 +927,21 @@ def test_require_headers_rejects_anonymous_http(monkeypatch: pytest.MonkeyPatch)
     client = mcp_server._client(_ctx_of({"x-cnb-token": "t", "x-cnb-repo": "g/r"}))
     assert client is not None
 
+    # 拒绝走 _tool_guard 统一出口：调用方拿到可读修复指引 JSON，而非笼统框架异常（复审阻塞项）
+    import asyncio
+
+    tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
+    result = asyncio.run(tool.fn(number=1, ctx=_ctx_of({"user-agent": "anonymous"})))
+    assert "强制凭据头" in result and "X-CNB-Token" in result
+
 
 def test_require_headers_stdio_unaffected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """stdio 无请求头是常态：开关开启下 ctx=None 仍回落环境变量，不自杀。"""
+    """stdio 无请求头是常态：开关开启下回落环境变量，不自杀。
+
+    覆盖 stdio 真实形态（复审阻塞项）：框架对带 Context 形参的工具无条件
+    注入 ctx（恒非 None）但 headers 为 None——_client(None) 手工直调形态
+    绕开了误伤分支，必须以 _ctx_of(None)（ctx 非 None + headers=None）锚定。
+    """
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
     # 回落路径构造 CNBApiClient 需要服务端凭据 env 完整（CI 无真实凭据，显式注入）
@@ -937,7 +950,8 @@ def test_require_headers_stdio_unaffected(monkeypatch: pytest.MonkeyPatch) -> No
 
     mcp_server.main(["--transport", "stdio", "--require-headers"])
     assert mcp_server._require_headers is True
-    client = mcp_server._client(None)
+    # stdio 真实形态：ctx 非 None + headers=None → 不校验凭据
+    client = mcp_server._client(_ctx_of(None))
     assert client is not None
 
 

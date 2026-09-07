@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import ipaddress
 import json
 import sys
@@ -117,16 +118,17 @@ mcp = MCPServer(
 def _client(ctx: Context | None) -> CNBApiClient:
     """按本次请求构造 CNBApiClient：请求头配置优先，回落环境变量（见 api.build_client_from_headers）。
 
-    MCP 框架对标注 Context 的参数自动注入请求上下文（不进入工具 Schema），
-    ctx.headers 在 sse/streamable-http 下为该次 HTTP 请求头，stdio 下为 None
-    （无请求头 → 配置回落环境变量，与历史行为一致）。
+    MCP 框架对标注 Context 的参数自动注入请求上下文（不进入工具 Schema）：
+    sse/streamable-http 下 ctx.headers 为该次 HTTP 请求头；stdio 下 ctx 仍被
+    无条件注入（恒非 None）但 headers 为 None——故凭据校验以「有无请求头」
+    判传输，不能用 ctx is not None（复审阻塞项：会误杀 stdio 全部工具）。
 
     --require-headers 开启时（HTTP 共享部署强制多用户隔离），凭据头不齐的
     请求直接拒绝，不回落服务端环境变量凭据——杜绝匿名调用间接使用
     CNB_AGENTIC_MEMORY_TOKEN。stdio 下开关不生效（无请求头是常态）。
     """
     headers = ctx.headers if ctx is not None else None
-    if _require_headers and ctx is not None:
+    if _require_headers and headers is not None:
         # 仅约束 HTTP 传输：stdio 无请求头是常态，不适用本开关
         overrides = resolve_overrides_from_headers(headers)
         if not overrides:
@@ -136,6 +138,26 @@ def _client(ctx: Context | None) -> CNBApiClient:
                 "匿名请求不再回落服务端环境变量凭据。"
             )
     return build_client_from_headers(headers)
+
+
+def _tool_guard(fn):
+    """工具统一错误出口：MemoryRuleError 转为 {"error": ...} JSON 结果文本。
+
+    不加此出口，MemoryRuleError 穿透无捕获的工具被框架包成笼统的
+    "Error executing tool ..."（复审阻塞项）：调用方拿不到修复指引，
+    且每次匿名探测都打 ERROR 级故障栈。--require-headers 的拒绝
+    （凭据头不齐）是可预期的业务拒绝，与 memory_write 既有错误形状
+    同源，客户端收到后自行决策补凭据头重试。
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await fn(*args, **kwargs)
+        except MemoryRuleError as err:
+            return json.dumps({"error": str(err)}, ensure_ascii=False)
+
+    return wrapper
 
 
 def _write_out(result: WriteResult) -> dict:
@@ -190,6 +212,7 @@ def _issue_out(issue: Any, *, body_echo: bool = True) -> dict:
         "按 number 回查（能否立即语义检索取决于仓库同步配置，可能是定时入库）。"
     )
 )
+@_tool_guard
 async def memory_write(
     content: str,
     title: str | None = None,
@@ -211,6 +234,7 @@ async def memory_write(
 
 
 @mcp.tool(description="按编号精确读取记忆原文（正文 Markdown）")
+@_tool_guard
 async def memory_get(number: int, ctx: Context | None = None) -> str:
     """读取记忆。"""
     async with _client(ctx) as client:
@@ -226,6 +250,7 @@ async def memory_get(number: int, ctx: Context | None = None) -> str:
         "未提供而忽略；tags/category 为追加语义。"
     )
 )
+@_tool_guard
 async def memory_update(
     number: int,
     content: str | None = None,
@@ -243,6 +268,7 @@ async def memory_update(
 
 
 @mcp.tool(description="向记忆追加一条更新记录（进知识库，可被语义检索）")
+@_tool_guard
 async def memory_append(number: int, note: str, ctx: Context | None = None) -> str:
     """追加更新记录。"""
     async with _client(ctx) as client:
@@ -260,6 +286,7 @@ async def memory_append(number: int, note: str, ctx: Context | None = None) -> s
         "修正/补充记忆请用 memory_update，本工具仅用于真正废弃。"
     )
 )
+@_tool_guard
 async def memory_delete(number: int, ctx: Context | None = None) -> str:
     """软删除记忆。"""
     async with _client(ctx) as client:
@@ -268,6 +295,7 @@ async def memory_delete(number: int, ctx: Context | None = None) -> str:
 
 
 @mcp.tool(description="恢复软删除的记忆")
+@_tool_guard
 async def memory_restore(number: int, ctx: Context | None = None) -> str:
     """恢复记忆。"""
     async with _client(ctx) as client:
@@ -282,6 +310,7 @@ async def memory_restore(number: int, ctx: Context | None = None) -> str:
         "按已知分类浏览，search 适合按内容模糊查找。"
     )
 )
+@_tool_guard
 async def memory_list(
     category: str | None = None,
     tags: list[str] | None = None,
@@ -300,6 +329,7 @@ async def memory_list(
 
 
 @mcp.tool(description="最近更新的记忆")
+@_tool_guard
 async def memory_list_recent(limit: int = 5, ctx: Context | None = None) -> str:
     """最近记忆。"""
     async with _client(ctx) as client:
@@ -314,6 +344,7 @@ async def memory_list_recent(limit: int = 5, ctx: Context | None = None) -> str:
         "编号），用 memory_keyword_search 更精准。知识库不可用时按错误提示处理。"
     )
 )
+@_tool_guard
 async def memory_search(
     query: str,
     top_k: int = 5,
@@ -337,6 +368,7 @@ async def memory_search(
         "与 memory_search 并列的第二检索方法，按需选择。"
     )
 )
+@_tool_guard
 async def memory_keyword_search(
     query: str,
     limit: int = 20,
