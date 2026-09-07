@@ -1096,3 +1096,80 @@ def test_shared_client_pool_token_not_in_plaintext(monkeypatch: pytest.MonkeyPat
         await pool.aclose()
 
     asyncio.run(scenario())
+
+
+def test_shared_client_pool_cross_loop_isolated(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """跨事件循环访问不走池（临时客户端直建直关 + 告警一次），不炸已关连接（幽明阻塞项整改）。"""
+    import asyncio
+
+    from cnb_agentic_memory.api import SharedClientPool
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    pool = SharedClientPool()
+
+    async def acquire_in_loop():
+        return await pool.acquire()
+
+    # loop1：绑定池
+    asyncio.run(acquire_in_loop())
+
+    # loop2：异 loop 请求 → 临时客户端（不入池），stderr 告警一次
+    c2 = asyncio.run(acquire_in_loop())
+    captured = capsys.readouterr()
+    assert "跨事件循环" in captured.err
+    assert len(pool._clients) == 1  # 临时客户端未入池
+    # 临时客户端已由 release 关闭
+    assert c2._client is None
+    # 告警只发一次
+    asyncio.run(acquire_in_loop())
+    captured2 = capsys.readouterr()
+    assert captured2.err.count("跨事件循环") == 0
+
+    # loop1 的原客户端用 aclose 收尾（不能在 loop2 close loop1 的连接，直接清池）
+    pool._clients.clear()
+
+
+def test_shared_client_pool_bounded_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """有界淘汰：条目超 MAX_ENTRIES 时淘汰最旧 0 引用条目；全在用则不阻塞（幽明阻塞项整改）。"""
+    import asyncio
+
+    from cnb_agentic_memory.api import SharedClientPool
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+    pool = SharedClientPool()
+    pool.MAX_ENTRIES = 3
+
+    async def scenario():
+        # 制造 3 个不同键条目（均 0 引用后）
+        clients = []
+        for i in range(3):
+            c = await pool.acquire(repo=f"g/r{i}")
+            clients.append(c)
+        for c in clients:
+            await pool.release(c)
+        assert len(pool._clients) == 3
+
+        # 第 4 个键触发淘汰：最旧的 0 引用条目被逐出
+        await pool.acquire(repo="g/r-new")
+        assert len(pool._clients) == 3
+        keys = list(pool._clients.keys())
+        assert all("g/r0" not in k for k in keys)  # 最旧者被淘汰
+
+        # 全部在用（refs>0）时不淘汰：宁超限不关正在用的连接
+        pool._clients.clear()
+        busy = []
+        for i in range(3):
+            c = await pool.acquire(repo=f"g/b{i}")
+            busy.append(c)
+        # 3 条全部 refs=1（在用）：第 4 键 acquire 时无 0 引用可淘汰 → 不淘汰
+        await pool.acquire(repo="g/b-extra")
+        assert len(pool._clients) == 4  # 超限保留，未误伤在用条目
+        for c in busy:
+            await pool.release(c)
+        await pool.aclose()
+
+    asyncio.run(scenario())

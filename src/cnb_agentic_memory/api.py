@@ -9,8 +9,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
+import sys
+from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Any
 
@@ -124,22 +127,33 @@ class SharedClientPool:
     """按配置键缓存的 CNBApiClient 池（MCP 工具层专用，SDK 用户不受影响）。
 
     #83 建议第 5 条：HTTP 共享部署下每个工具调用新建客户端（TLS 握手）开销
-    可观。按配置键缓存复用连接池；键空间有界（本机 env 1 个 + 共享部署
-    每用户 1 个），无需淘汰。
+    可观。按配置键缓存复用连接池。
 
-    生命周期：acquire/release 仅做同步字典计数（事件循环单线程内天然
-    互斥，无挂起点 → 无需 asyncio.Lock，也消除模块级锁跨事件循环的
-    死锁面——复审阻塞项）；引用归零**不**关闭连接，条目保活复用，
-    关闭统一交显式 `aclose()`（进程退出/测试清理）——串行工具调用
-    每次 acquire/release 后条目仍在，复用才真正达成（复审阻塞项：
-    归零即关使主路径每次缓存未命中，TLS 重握手）。
+    生命周期与边界（复审阻塞项整改）：
 
-    凭据不进键明文：token 以 sha256 摘要参与键（复审阻塞项：明文
-    token 进程级驻留，crash/dump/诊断即暴露全体用户凭据）。
+    - **条目保活复用**：acquire/release 仅做同步字典计数，引用归零不关
+      连接——串行工具调用主路径每次 acquire 均命中缓存；关闭统一交显式
+      aclose()（进程退出/测试清理）。
+    - **绑定事件循环**：首次 acquire 懒绑定当前 loop 并固定；此后异 loop
+      请求不走池（临时客户端直建直关 + stderr 告警一次）——httpx 连接池
+      与创建它的 loop 绑定，跨 loop 复用已关连接必炸（RuntimeError）。
+      MCP server 进程单 loop 主场景不受影响。
+    - **有界淘汰**：条目数超 MAX_ENTRIES 时优先淘汰引用为 0 的最旧条目
+      （LRU 触碰序；无 0 引用则放弃淘汰，不关正在使用的连接）——防
+      「每请求变换 repo 头」类部署把池撑成无界。
+    - **凭据不进键明文**：token 以 sha256 摘要参与键（crash/dump 不暴露）。
+
+    acquire/release 均为同步字典操作、无 await 挂起点：事件循环单线程内
+    天然互斥，无需锁（模块级 asyncio.Lock 是多 loop 宿主死锁源，已移除）。
     """
 
+    #: 池条目上限：实际键空间（本机 1 + 每用户 1）远小于此，超限即异常部署
+    MAX_ENTRIES = 32
+
     def __init__(self) -> None:
-        self._clients: dict[tuple[str, str, str, str], tuple[CNBApiClient, int]] = {}
+        self._clients: OrderedDict[tuple[str, str, str, str], tuple[CNBApiClient, int]] = OrderedDict()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_warned = False
 
     @staticmethod
     def _token_digest(token: str) -> str:
@@ -162,6 +176,14 @@ class SharedClientPool:
             str(resolved_timeout),
         )
 
+    def _evict_if_full(self) -> None:
+        """条目超上限时淘汰最旧的 0 引用条目（LRU）；无空闲则放弃不阻塞。"""
+        while len(self._clients) >= self.MAX_ENTRIES:
+            evictable = next((k for k, (_, refs) in self._clients.items() if refs == 0), None)
+            if evictable is None:
+                return  # 全部在用：宁可超限也不关正在使用的连接
+            del self._clients[evictable]
+
     async def acquire(
         self,
         token: str | None = None,
@@ -169,23 +191,47 @@ class SharedClientPool:
         base_url: str | None = None,
         timeout: float | None = None,
     ) -> CNBApiClient:
-        """取键相同的缓存客户端（引用 +1），无则构造并缓存。"""
+        """取键相同的缓存客户端（引用 +1），无则构造并缓存。
+
+        异 loop 请求不走池：直接返回临时客户端（release 时识别关闭），
+        不共享、不缓存，避免跨 loop 复用已关连接（RuntimeError）。
+        """
+        loop = asyncio.get_running_loop()
+        if self._loop is None:
+            self._loop = loop
+        if self._loop is not loop:
+            if not self._loop_warned:
+                self._loop_warned = True
+                print(
+                    "警告：SharedClientPool 检测到跨事件循环访问，该请求不享受连接复用"
+                    "（httpx 客户端与创建它的 loop 绑定）；本池随首次使用的 loop 固定。",
+                    file=sys.stderr,
+                )
+            client = CNBApiClient(token=token, repo=repo, base_url=base_url, timeout=timeout)
+            client._pool_temporary = True  # noqa: SLF001 — 池内部标记
+            return client
+
         key = self._key(token, repo, base_url, timeout)
+        self._evict_if_full()
         entry = self._clients.get(key)
         if entry is not None:
             client, refs = entry
             self._clients[key] = (client, refs + 1)
+            self._clients.move_to_end(key)  # LRU 触碰
             return client
         client = CNBApiClient(token=token, repo=repo, base_url=base_url, timeout=timeout)
         self._clients[key] = (client, 1)
         return client
 
     async def release(self, client: CNBApiClient) -> None:
-        """引用 -1；归零**不**关闭——条目保活复用，关闭统一走 aclose()。
+        """引用 -1；归零不关（条目保活复用），关闭统一走 aclose()。
 
         本方法无 await 挂起点：事件循环单线程内「查找-计数」不可被其他
-        协程打断，引用计数天然线程安全（就 asyncio 并发模型而言）。
+        协程打断。临时客户端（异 loop 直建）在此直接关闭。
         """
+        if getattr(client, "_pool_temporary", False):
+            await client.close()
+            return
         for key, (cached, refs) in self._clients.items():
             if cached is client:
                 self._clients[key] = (cached, max(refs - 1, 0))
@@ -220,6 +266,8 @@ class CNBApiClient:
         self.timeout = timeout if timeout is not None else parse_timeout(env("TIMEOUT"))
         self._validate_config()
         self._client: httpx.AsyncClient | None = None
+        # 池内部标记：SharedClientPool 对异 loop 请求建的临时客户端（不入池，release 即关）
+        self._pool_temporary: bool = False
 
     # ---- 生命周期 ----
 
@@ -248,6 +296,15 @@ class CNBApiClient:
 
     async def __aexit__(self, *exc_info: object) -> None:
         await self.close()
+
+    def __repr__(self) -> str:
+        """收敛 repr：token 仅呈现摘要前 8 字符——池条目长期驻留进程内，
+        dump/诊断输出不得携带明文凭据（#83 建议第 5 条复审建议）。"""
+        token_head = hashlib.sha256(self.token.encode()).hexdigest()[:8] if self.token else "<empty>"
+        return (
+            f"CNBApiClient(repo={self.repo!r}, base_url={self.base_url!r}, "
+            f"token=sha256:{token_head}, timeout={self.timeout!r})"
+        )
 
     # ---- 内部 ----
 
