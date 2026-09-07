@@ -136,20 +136,23 @@ class SharedClientPool:
     - **条目保活复用**：acquire/release 仅做同步字典计数，引用归零不关
       连接——串行工具调用主路径每次 acquire 均命中缓存；关闭统一交显式
       aclose()（进程退出/测试清理）。
-    - **绑定事件循环**：首次 acquire 懒绑定当前 loop 并固定；此后异 loop
-      请求不走池（临时客户端直建直关 + stderr 告警一次）——httpx 连接池
+    - **绑定事件循环**：绑定发生在首次入池成功时并固定；此后异 loop
+      请求不走池（临时客户端直建直关 + logging 告警一次）——httpx 连接池
       与创建它的 loop 绑定，跨 loop 复用已关连接必炸（RuntimeError）。
       MCP server 进程单 loop 主场景不受影响。
     - **有界淘汰**：条目数超 MAX_ENTRIES 时优先淘汰引用为 0 的最旧条目
-      （LRU 触碰序；无 0 引用则放弃淘汰，不关正在使用的连接）——防
-      「每请求变换 repo 头」类部署把池撑成无界。
+      （LRU 触碰序；无 0 引用则放弃淘汰，不关正在使用的连接）。注意
+      淘汰仅由**新键 acquire** 驱动：归零条目自身不会主动移出，异键
+      突发未再触发 acquire 时超限条目会滞留（有界承诺在此边界内成立）。
     - **凭据不进键明文**：token 以 sha256 摘要参与键（crash/dump 不暴露）。
 
-    acquire/release 均为同步字典操作、无 await 挂起点：事件循环单线程内
-    天然互斥，无需锁（模块级 asyncio.Lock 是多 loop 宿主死锁源，已移除）。
+    acquire 为同步字典计数 + 一次可挂起的淘汰 close；release 为纯同步
+    操作——事件循环单线程内天然互斥，无需锁（模块级 asyncio.Lock 是
+    多 loop 宿主死锁源，已移除）。
     """
 
-    #: 池条目上限：实际键空间（本机 1 + 每用户 1）远小于此，超限即异常部署
+    #: 池条目上限：实际键空间（本机 1 + 每用户 1）远小于此，超限即异常部署。
+    #: 注意淘汰仅由新键 acquire 驱动，归零条目滞留期内在用引用不占淘汰名额
     MAX_ENTRIES = 32
 
     def __init__(self) -> None:
@@ -247,7 +250,9 @@ class SharedClientPool:
             try:
                 await client.close()
             except RuntimeError:  # 异 loop 连接：Event loop is closed
-                pass
+                # 静默吞没无留痕会掩盖排查线索：debug 级留痕（不升 warning，
+                # 异 loop 已死连接本就该关，属预期清理分支）
+                logger.debug("aclose 跳过异 loop 已关闭连接：%r", client, exc_info=True)
         self._clients.clear()
 
 
