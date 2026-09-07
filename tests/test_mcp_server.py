@@ -1099,7 +1099,7 @@ def test_shared_client_pool_token_not_in_plaintext(monkeypatch: pytest.MonkeyPat
 
 
 def test_shared_client_pool_cross_loop_isolated(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """跨事件循环访问不走池（临时客户端直建直关 + 告警一次），不炸已关连接（幽明阻塞项整改）。"""
     import asyncio
@@ -1116,17 +1116,19 @@ def test_shared_client_pool_cross_loop_isolated(
     # loop1：绑定池
     asyncio.run(acquire_in_loop())
 
-    # loop2：异 loop 请求 → 临时客户端（不入池），stderr 告警一次
+    # loop2：异 loop 请求 → 临时客户端（不入池），logging 告警一次（锐鉴遗留项：
+    # print 在 server 进程 stderr 未接流时丢失，统一走 logger）
+    import logging as logging_mod
+
     c2 = asyncio.run(acquire_in_loop())
-    captured = capsys.readouterr()
-    assert "跨事件循环" in captured.err
+    assert any("跨事件循环" in r.message for r in caplog.records if r.levelno == logging_mod.WARNING)
     assert len(pool._clients) == 1  # 临时客户端未入池
     # 临时客户端已由 release 关闭
     assert c2._client is None
     # 告警只发一次
+    caplog.clear()
     asyncio.run(acquire_in_loop())
-    captured2 = capsys.readouterr()
-    assert captured2.err.count("跨事件循环") == 0
+    assert not any("跨事件循环" in r.message for r in caplog.records)
 
     # loop1 的原客户端用 aclose 收尾（不能在 loop2 close loop1 的连接，直接清池）
     pool._clients.clear()

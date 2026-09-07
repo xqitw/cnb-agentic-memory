@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import os
-import sys
 from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Any
@@ -28,6 +28,8 @@ from .models import (
     Label,
     PatchIssueForm,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.cnb.cool"
 DEFAULT_TIMEOUT = 30.0
@@ -176,13 +178,14 @@ class SharedClientPool:
             str(resolved_timeout),
         )
 
-    def _evict_if_full(self) -> None:
+    async def _evict_if_full(self) -> None:
         """条目超上限时淘汰最旧的 0 引用条目（LRU）；无空闲则放弃不阻塞。"""
         while len(self._clients) >= self.MAX_ENTRIES:
             evictable = next((k for k, (_, refs) in self._clients.items() if refs == 0), None)
             if evictable is None:
                 return  # 全部在用：宁可超限也不关正在使用的连接
-            del self._clients[evictable]
+            client, _ = self._clients.pop(evictable)
+            await client.close()
 
     async def acquire(
         self,
@@ -197,22 +200,21 @@ class SharedClientPool:
         不共享、不缓存，避免跨 loop 复用已关连接（RuntimeError）。
         """
         loop = asyncio.get_running_loop()
-        if self._loop is None:
-            self._loop = loop
-        if self._loop is not loop:
+        # 绑定与入池绑定：只有确认走缓存路径才允许设置 _loop——防止进程首个
+        # 请求来自临时 loop（管理探针等）把池劫持到即将结束的 loop 上（锐鉴阻塞2）
+        if self._loop is not None and self._loop is not loop:
             if not self._loop_warned:
                 self._loop_warned = True
-                print(
-                    "警告：SharedClientPool 检测到跨事件循环访问，该请求不享受连接复用"
-                    "（httpx 客户端与创建它的 loop 绑定）；本池随首次使用的 loop 固定。",
-                    file=sys.stderr,
+                logger.warning(
+                    "SharedClientPool 检测到跨事件循环访问，该请求不享受连接复用"
+                    "（httpx 客户端与创建它的 loop 绑定）；本池随首次使用的 loop 固定。"
                 )
             client = CNBApiClient(token=token, repo=repo, base_url=base_url, timeout=timeout)
             client._pool_temporary = True  # noqa: SLF001 — 池内部标记
             return client
 
         key = self._key(token, repo, base_url, timeout)
-        self._evict_if_full()
+        await self._evict_if_full()
         entry = self._clients.get(key)
         if entry is not None:
             client, refs = entry
@@ -221,6 +223,8 @@ class SharedClientPool:
             return client
         client = CNBApiClient(token=token, repo=repo, base_url=base_url, timeout=timeout)
         self._clients[key] = (client, 1)
+        if self._loop is None:
+            self._loop = loop
         return client
 
     async def release(self, client: CNBApiClient) -> None:
@@ -240,7 +244,10 @@ class SharedClientPool:
     async def aclose(self) -> None:
         """关闭全部缓存客户端并清空（进程退出/测试清理用；显式调用）。"""
         for client, _ in self._clients.values():
-            await client.close()
+            try:
+                await client.close()
+            except RuntimeError:  # 异 loop 连接：Event loop is closed
+                pass
         self._clients.clear()
 
 
