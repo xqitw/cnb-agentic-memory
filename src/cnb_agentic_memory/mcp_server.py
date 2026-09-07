@@ -133,8 +133,9 @@ async def _client(ctx: Context | None):
     CNB_AGENTIC_MEMORY_TOKEN。stdio 下开关不生效（无请求头是常态）。
 
     #83 建议第 5 条：客户端来自共享池（按 token/repo/base_url/timeout 键
-    复用连接池，免每请求 TLS 握手）；async with 退出时 release 引用，
-    归零才真正关闭（并发关闭语义见 api.SharedClientPool）。
+    复用连接池，免每请求 TLS 握手）；async with 退出时 release 引用——
+    引用归零不关闭（条目保活复用），关闭统一走显式 aclose()（并发
+    关闭语义见 api.SharedClientPool）。
     """
     headers = ctx.headers if ctx is not None else None
     overrides = resolve_overrides_from_headers(headers) if headers else {}

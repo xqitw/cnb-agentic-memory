@@ -995,7 +995,7 @@ def test_require_headers_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_shared_client_pool_reuse_and_refcount(monkeypatch: pytest.MonkeyPatch) -> None:
-    """共享池：同键复用实例（#83 第 5 条），引用计数归零才真正关闭（并发关闭语义）。"""
+    """共享池：同键复用实例（#83 第 5 条），引用计数归零不关闭（条目保活，关闭统一走 aclose）。"""
     import asyncio
 
     from cnb_agentic_memory.api import SharedClientPool

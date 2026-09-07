@@ -146,9 +146,10 @@ class SharedClientPool:
       突发未再触发 acquire 时超限条目会滞留（有界承诺在此边界内成立）。
     - **凭据不进键明文**：token 以 sha256 摘要参与键（crash/dump 不暴露）。
 
-    acquire 为同步字典计数 + 一次可挂起的淘汰 close；release 为纯同步
-    操作——事件循环单线程内天然互斥，无需锁（模块级 asyncio.Lock 是
-    多 loop 宿主死锁源，已移除）。
+    acquire 含一次可挂起的淘汰 close；release 对池内条目为纯同步计数、
+    对异 loop 临时客户端含一次 close 挂起（仅有的两个挂起点）——
+    事件循环单线程内天然互斥，无需锁（模块级 asyncio.Lock 是多 loop
+    宿主死锁源，已移除）。
     """
 
     #: 池条目上限：实际键空间（本机 1 + 每用户 1）远小于此，超限即异常部署。
@@ -240,8 +241,9 @@ class SharedClientPool:
     async def release(self, client: CNBApiClient) -> None:
         """引用 -1；归零不关（条目保活复用），关闭统一走 aclose()。
 
-        本方法无 await 挂起点：事件循环单线程内「查找-计数」不可被其他
-        协程打断。临时客户端（异 loop 直建）在此直接关闭。
+        池内条目路径为纯同步计数（事件循环单线程内「查找-计数」不可被
+        其他协程打断）；异 loop 临时客户端在此直接关闭——这是本方法
+        唯一的 await 挂起点。
         """
         if getattr(client, "_pool_temporary", False):
             await client.close()
