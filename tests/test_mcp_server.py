@@ -734,7 +734,7 @@ def test_whitelist_fixed_no_extension_entry(
     captured = capsys.readouterr()
     # 废弃 env 显式告警（非阻塞行级意见：静默失效会让反代部署升级后全量 421 无提示）
     assert "已随 --allowed-host 移除" in captured.err
-    # 示例文案完整（行级意见：字面量尾空格塌陷导致 Origin 示例丢失引号）
+    # 示例文案完整：锁定 Origin 空值引号示例不回退（不论塌陷机理，输出形态必须如此）
     assert 'proxy_set_header Origin "";' in captured.err
     sec = calls[-1]["transport_security"]
     assert not any("example.com" in h for h in sec.allowed_hosts)
