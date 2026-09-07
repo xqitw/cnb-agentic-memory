@@ -67,13 +67,22 @@ cnb-agentic-memory-mcp --transport sse --host 0.0.0.0 --port 8000
 >
 > **对外部署（反代）**：程序端 DNS rebinding 防护白名单固定为本机地址
 > （localhost 族 + `--host` 监听地址），不提供扩展入口（原 `--allowed-host`
-> 已移除）。反代部署时推荐改写 Host 头指向本机：
+> 已移除）。反代部署须同时处理 Host 与 Origin 两侧——只改写 Host 不够：
+> 程序端 Origin 白名单同样只有本机 `http://` 条目，浏览器经反代发出的
+> `Origin: https://对外域名` 会被 403。二选一：
+>
+> **方案 A（推荐，改写 Host + 剥离 Origin）**：适用于 MCP 客户端不带
+> Origin 头的典型部署；若确有浏览器直连需求，须在代理层把 Origin 一并
+> 校验后剥离或改写为本机形式：
 >
 > ```nginx
 > proxy_set_header Host localhost;
+> proxy_set_header Origin "";
 > ```
 >
-> 或者在代理层完成访问控制与 Host/Origin 白名单校验——这些本属代理层职责。
+> **方案 B（代理层白名单）**：代理层完成访问控制与 Host/Origin 白名单
+> 校验（程序端防护对反代内网流量放行本机地址，无须额外配置）——这些
+> 本属代理层职责。
 
 ## 客户端接入
 
