@@ -126,7 +126,8 @@ async def test_pool_isolation(token: str, repo: str) -> None:
 
 def child_env() -> dict[str, str]:
     """子进程环境：测试凭据显式覆盖继承的正式库配置（cli/mcp 子进程只认
-    CNB_AGENTIC_MEMORY_*，不覆盖则回落 shell 继承的正式库）。"""
+    CNB_AGENTIC_MEMORY_*，不覆盖则回落 shell 继承的正式库）。两键的值恒为
+    测试凭据（IT_* 映射），shell 继承的正式值不可能穿透。"""
     return {
         **os.environ,
         "CNB_AGENTIC_MEMORY_TOKEN": os.environ["CNB_AGENTIC_MEMORY_IT_TOKEN"],
@@ -320,6 +321,7 @@ def test_mcp_http(number: int) -> None:
         record("MCP HTTP", False, str(err)[:80])
     finally:
         proc.kill()
+        stderr_log.close()
 
 
 async def main() -> None:
