@@ -13,7 +13,7 @@ https://<project>.edgeone.app/mcp。Serverless 短执行模型（上限 120s）�
 部署步骤与实测结论回填见 docs/EdgeOne.md。
 """
 
-import sys
+import warnings
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -27,11 +27,13 @@ if _public_host:
     _transport_security = build_transport_security(_public_host, origin_schemes=("https",))
 else:
     # 测试部署兜底：未设 PUBLIC_HOST 时防护不启用（框架不校验 Host/Origin）。
-    # 生产部署必须配置该变量，否则对外端点暴露于 DNS rebinding 面
-    print(
-        "警告：未设置 CNB_AGENTIC_MEMORY_MCP_PUBLIC_HOST，DNS rebinding 防护未启用；"
+    # 生产部署必须配置该变量，否则对外端点暴露于 DNS rebinding 面——
+    # warnings.warn 收口（默认打印一次至 stderr，EO 采为函数日志），不用裸 print
+    warnings.warn(
+        "未设置 CNB_AGENTIC_MEMORY_MCP_PUBLIC_HOST，DNS rebinding 防护未启用；"
         "生产部署必须配置该环境变量（值为对外域名，如 my-project.edgeone.app）",
-        file=sys.stderr,
+        RuntimeWarning,
+        stacklevel=2,
     )
     _transport_security = None
 
