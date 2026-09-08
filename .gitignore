@@ -26,3 +26,5 @@ htmlcov/
 .DS_Store
 .Trash-*/
 node_modules/
+# 本地凭据/环境文件（集成测试用）
+.env*

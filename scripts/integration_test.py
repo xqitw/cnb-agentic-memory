@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 
 import httpx
@@ -36,7 +37,7 @@ def section(name: str) -> None:
     print(f"\n== {name} ==")
 
 
-async def test_memory_core(memory: Memory) -> dict[int, object]:
+async def test_memory_core(memory: Memory) -> dict[str, object]:
     """写入/读取/更新/追加/软删/恢复全链路。"""
     section("Memory 核心链路")
 
@@ -153,11 +154,12 @@ def test_cli(number: int) -> None:
 def test_mcp_stdio(number: int) -> None:
     """MCP stdio 独立进程：initialize + tools/call memory_get。"""
     section("MCP stdio")
+    stderr_log = tempfile.TemporaryFile(mode="w+")
     proc = subprocess.Popen(
         [sys.executable, "-m", "cnb_agentic_memory.mcp_main"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=stderr_log,
         text=True,
     )
     try:
@@ -193,7 +195,8 @@ def test_mcp_stdio(number: int) -> None:
         text = resp2["result"]["content"][0]["text"]
         record("stdio tools/call memory_get", json.loads(text)["number"] == number)
     except Exception as err:  # noqa: BLE001
-        record("stdio tools/call memory_get", False, str(err)[:80])
+        stderr_log.seek(0)
+        record("stdio tools/call memory_get", False, f"{err}"[:60] + " | stderr: " + stderr_log.read()[-80:])
     finally:
         proc.kill()
 
@@ -308,10 +311,14 @@ async def main() -> None:
     client = CNBApiClient(token=token, repo=repo)
     memory = Memory(client)
 
-    # 段级异常守护：单段崩溃只记 FAIL，后续段落照常执行（契约：单段失败不中断）
+    # 段级异常守护：单段崩溃只记 FAIL，后续段落照常执行（契约：单段失败不中断）。
+    # 同步段统一 to_thread 调度：直接在事件循环上跑同步阻塞函数（subprocess.run
+    # 至多 120s）会冻结整个循环，语义检索等异步段的时延观测随之失真
     async def guard(name: str, fn, *args) -> object:
         try:
-            return await fn(*args) if asyncio.iscoroutinefunction(fn) else fn(*args)
+            if asyncio.iscoroutinefunction(fn):
+                return await fn(*args)
+            return await asyncio.to_thread(fn, *args)
         except Exception as err:  # noqa: BLE001
             record(name, False, f"段级异常: {str(err)[:90]}")
             return {}
