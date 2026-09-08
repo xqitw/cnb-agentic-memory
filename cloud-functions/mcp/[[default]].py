@@ -16,7 +16,8 @@ https://<project>.edgeone.app/mcp。Serverless 短执行模型（上限 120s）�
 import warnings
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from cnb_agentic_memory.api import env
 from cnb_agentic_memory.mcp_server import build_transport_security, mcp
@@ -66,4 +67,22 @@ app = FastAPI(
     openapi_url=None,
     lifespan=_mcp_lifespan,
 )
+
+
+@app.api_route(
+    "/",
+    methods=["GET", "PUT", "PATCH", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+async def _reject_non_mcp_methods(_request: Request) -> JSONResponse:
+    # stateless + json_response 形态无服务器推送流：SDK 对 GET /mcp 不回 405 而是
+    # 挂起一条无 session、无内容、无人关闭的 SSE 长连接，白耗 maxDuration（120s）
+    # 执行配额还可能被平台记为异常长连接（幽明 #91 暗裂二）——外层直接拦截。
+    # POST（工具调用）与 DELETE（会话终结语义）仍透传子应用
+    return JSONResponse(
+        {"error": "method not allowed：本端点仅接受 POST（MCP JSON-RPC）"},
+        status_code=405,
+    )
+
+
 app.mount("/", _mcp_asgi)

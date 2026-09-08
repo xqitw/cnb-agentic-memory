@@ -33,5 +33,6 @@
 
 - [ ] Python 运行时具体版本（本项目 `requires-python >= 3.11`，EO 官方文档仅标 3.9+）
 - [ ] EO 转发后 Host/Origin 头实际形态与白名单匹配（适配层按「无端口对外域名 + https Origin」生成）
+- [ ] EO 运行时是否执行 ASGI lifespan：session manager 启动挂在外层 FastAPI lifespan 上（适配层已按 SDK 官方挂载模式手动进入子应用 `lifespan_context`），若平台不跑 lifespan 则启动即 500
 - [ ] `requirements.txt` 的 git URL 引用在 EO 构建环境可安装性（需 git 且可匿名克隆 CNB 公开仓库）
 - [ ] `maxDuration=120` 实际生效情况与冷启动延迟（实例回收后 import + 连接池重建）
