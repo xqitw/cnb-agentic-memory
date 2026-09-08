@@ -791,7 +791,7 @@ def test_build_transport_security_https_origins_for_edgeone() -> None:
 def test_configure_require_headers_env_fallback_and_explicit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """require-headers 统一激活入口：env 兜底与显式传参（#91 幽明阻塞项）。
+    """require-headers 统一激活入口：env 兜底与显式传参。
 
     Serverless 适配层不经 main() 直接 import mcp 单例，argparse default 的
     env 兜底在该路径不生效（实测恒 False）——必须显式 configure_require_headers()。
@@ -816,7 +816,7 @@ def test_configure_require_headers_env_fallback_and_explicit(
 def test_ensure_require_headers_resolves_per_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """请求期门禁惰性求解：EO 冷启动 env 注入时序兜底（锐鉴 #91 阻塞项）。
+    """请求期门禁惰性求解：EO 冷启动 env 注入时序兜底。
 
     import 期 env 未注入时 configure 求解为 False，首个请求期重读 env 须
     翻正；CLI 显式传参语义最高，不随 env 漂移。
@@ -1146,7 +1146,7 @@ def test_shared_client_pool_distinct_keys(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_shared_client_pool_serial_reuse(monkeypatch: pytest.MonkeyPatch) -> None:
-    """串行主路径复用（幽明阻塞项实测场景）：连续多次 acquire/release 得到同一实例。"""
+    """串行主路径复用：连续多次 acquire/release 得到同一实例。"""
     import asyncio
 
     from cnb_agentic_memory.api import SharedClientPool
@@ -1169,7 +1169,7 @@ def test_shared_client_pool_serial_reuse(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_shared_client_pool_token_not_in_plaintext(monkeypatch: pytest.MonkeyPatch) -> None:
-    """token 走 sha256 摘要进键（锐鉴阻塞项）：明文凭据不进程级驻留。"""
+    """token 走 sha256 摘要进池键：明文凭据不进程级驻留。"""
     import asyncio
 
     from cnb_agentic_memory.api import SharedClientPool
@@ -1191,7 +1191,7 @@ def test_shared_client_pool_token_not_in_plaintext(monkeypatch: pytest.MonkeyPat
 def test_shared_client_pool_cross_loop_isolated(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """异 loop 请求走临时客户端不入池 + logging 告警一次（锐鉴遗留项落实：print → logger）。"""
+    """异 loop 请求走临时客户端不入池，并以 logging 告警一次。"""
     import asyncio
     import logging as logging_mod
 
@@ -1229,7 +1229,7 @@ def test_shared_client_pool_cross_loop_isolated(
     async def acquire_release_in_foreign_loop():
         c = await pool.acquire()
         assert getattr(c, "_pool_temporary", False)
-        _ = c.client  # 物化懒创建的 _client（否则断言恒真，锐鉴三审阻塞2）
+        _ = c.client  # 物化懒创建的 _client（否则断言恒真）
         await pool.release(c)
         assert c._client is None  # 临时客户端 release 即关
         return c
@@ -1251,7 +1251,7 @@ def test_shared_client_pool_cross_loop_isolated(
 def test_shared_client_pool_dead_loop_self_heal(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """绑定 loop 结束后探活自愈：解绑重绑 + 池内死条目作废（锐鉴阻塞2整改：劫持可自愈）。"""
+    """绑定 loop 结束后探活自愈：解绑重绑 + 池内死条目作废（劫持可自愈）。"""
     import asyncio
 
     from cnb_agentic_memory.api import SharedClientPool
@@ -1290,7 +1290,7 @@ def test_shared_client_pool_dead_loop_self_heal(
 
 
 def test_shared_client_pool_bounded_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
-    """有界淘汰：条目超 MAX_ENTRIES 时淘汰最旧 0 引用条目（close 后逐出）；全在用则不阻塞（幽明阻塞项整改 + 锐鉴三审恢复）。"""
+    """有界淘汰：条目超 MAX_ENTRIES 时淘汰最旧 0 引用条目（close 后逐出）；全在用则不阻塞。"""
     import asyncio
 
     from cnb_agentic_memory.api import SharedClientPool
@@ -1311,7 +1311,7 @@ def test_shared_client_pool_bounded_eviction(monkeypatch: pytest.MonkeyPatch) ->
         assert len(pool._clients) == 3
 
         # 第 4 个键触发淘汰：最旧的 0 引用条目被逐出（先 close 再删，不泄漏）
-        _ = clients[0].client  # 物化懒创建的 _client（否则断言恒真，锐鉴三审阻塞1）
+        _ = clients[0].client  # 物化懒创建的 _client（否则断言恒真）
         await pool.acquire(repo="g/r-new")
         assert len(pool._clients) == 3
         keys = list(pool._clients.keys())

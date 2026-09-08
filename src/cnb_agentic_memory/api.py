@@ -204,7 +204,7 @@ class SharedClientPool:
         不共享、不缓存，避免跨 loop 复用已关连接（RuntimeError）。
         """
         loop = asyncio.get_running_loop()
-        # 已绑定 loop 的存活探活（锐鉴阻塞2整改）：临时 loop 首请求劫持绑定后，
+        # 已绑定 loop 的存活探活：临时 loop 首请求劫持绑定后，
         # loop 结束 → is_closed() → 解绑重绑到当前 loop，劫持可自愈而非永久。
         # 重绑时池内条目全部属已死 loop（连接已随 loop 死亡），一并作废清空。
         if self._loop is not None and self._loop.is_closed():
@@ -212,7 +212,7 @@ class SharedClientPool:
             self._clients.clear()
             self._loop = None
         # 绑定与入池绑定：只有确认走缓存路径才允许设置 _loop——防止进程首个
-        # 请求来自临时 loop（管理探针等）把池劫持到即将结束的 loop 上（锐鉴阻塞2）
+        # 请求来自临时 loop（管理探针等）把池劫持到即将结束的 loop 上
         if self._loop is not None and self._loop is not loop:
             if not self._loop_warned:
                 self._loop_warned = True

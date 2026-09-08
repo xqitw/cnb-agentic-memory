@@ -2,7 +2,7 @@
 # 结构对齐 xqitw/journapi:
 #   - main 分支 PR:跑测试(ruff + mypy + pytest + markdownlint)
 #   - 打 tag (v*):测试 -> 构建发布 PyPI -> code-wiki -> git release -> 同步 GitHub -> 发布 Skill
-#   - web 触发器:任意分支可在 web 页面手动触发部署到 EdgeOne Pages(对齐 xqitw/portfolio)
+#   - web 触发器:web 页面手动触发部署到 EdgeOne Pages($ 兜底分支,对齐 xqitw/portfolio)
 # 额外挂载:记忆仓库的 issue 事件触发知识库同步(见 $ 分支)
 #
 # 引入 xqitw/pipes 模板聚合文件,提供 .code-wiki-pipeline / .release-pipeline
@@ -25,7 +25,7 @@ include:
     script: npx --yes markdownlint-cli2 '**/*.md'
 
 # 复用片段:多版本 Python 测试（3.10-3.14，与 classifiers 声明一致；3.10 为 EO
-# Python 运行时版本，#91 部署实测要求）
+# Python 运行时为平台硬编码版本，部署兼容要求）
 # dev-base 内置 uv，用 UV_PYTHON 环境变量指定版本（uv 会按需自动下载对应 Python）
 .python-env-base: &python-env-base
   docker:
@@ -142,9 +142,9 @@ include:
           --changelog "$CNB_TAG_MESSAGE"
 
 # 复用片段:web 触发部署到腾讯云 EdgeOne Pages(结构对齐 xqitw/portfolio 的部署流水线)
-# 密钥来自 xqitw/api-key 的 env.yml(EDGE_ONE_PAGES_API_KEY),不落库;
+# 密钥来自 xqitw/api-key 的 env-eo.yml(EDGE_ONE_PAGES_API_KEY),不落库;
 # 按钮声明见 .cnb/web_trigger.yml
-# DEPLOY_NAME/DEPLOY_ENV 不在此硬编码(幽明 #91 暗缝:与按钮 inputs 同名双写,
+# DEPLOY_NAME/DEPLOY_ENV 不在此硬编码(与按钮 inputs 同名双写,
 # 覆盖优先级官方未明载,选「预览环境」可能被静默覆盖为生产)——以按钮 inputs 为
 # 唯一来源,其 default 已兜底项目名与生产环境
 .edgeone-deploy: &edgeone-deploy

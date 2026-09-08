@@ -9,6 +9,7 @@
         ".ruff_cache/**",
         ".mypy_cache/**",
         "dist/**",
+        ".Trash-0/**",
         "CLAUDE.md"
     ],
     "config": {

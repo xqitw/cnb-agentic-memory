@@ -4,7 +4,7 @@
 
 ## 项目
 
-cnb-agentic-memory — CNB Issue 智能体记忆系统：基于 CNB 平台的通用智能体记忆工具。以 CNB Issue 为存储、CNB 知识库为语义检索，以 MCP Server 形式对外提供服务。Python 3.10+（3.10 为 EdgeOne Pages Python 运行时版本，#91 部署要求），PyPI 包名 `cnb-agentic-memory`，CLI 命令 `cnb-agentic-memory`，MCP Server 独立入口命令 `cnb-agentic-memory-mcp`。
+cnb-agentic-memory — CNB Issue 智能体记忆系统：基于 CNB 平台的通用智能体记忆工具。以 CNB Issue 为存储、CNB 知识库为语义检索，以 MCP Server 形式对外提供服务。Python 3.10+（下限对齐 EdgeOne Pages Python 运行时版本），PyPI 包名 `cnb-agentic-memory`，CLI 命令 `cnb-agentic-memory`，MCP Server 独立入口命令 `cnb-agentic-memory-mcp`。
 
 ## 目标
 

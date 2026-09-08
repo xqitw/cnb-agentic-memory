@@ -41,8 +41,8 @@ _REQUIRE_HEADERS_TRUTHY = frozenset({"1", "true", "yes", "on"})
 # 工具签名不得携带与调用语义无关的部署开关（会污染 MCP Schema）
 _require_headers: bool = False
 # CLI 显式传参标记：--require-headers 为解析期已定语义，请求期不再回落 env；
-# 未显式传参时由请求入口每请求读 env 兜底（锐鉴 #91 阻塞项：EO 冷启动 env
-# 注入时序不受控，import 期一次性求解可能落后且零告警）
+# 未显式传参时由请求入口每请求读 env 兜底（EO 冷启动 env 注入时序不受控，
+# import 期一次性求解可能落后且零告警）
 _require_headers_explicit: bool = False
 
 # 共享客户端池：MCP 工具层专用（#83 建议第 5 条），按配置键复用连接池
@@ -144,7 +144,7 @@ async def _client(ctx: Context | None):
     """
     headers = ctx.headers if ctx is not None else None
     overrides = resolve_overrides_from_headers(headers) if headers else {}
-    # 请求期惰性求解门禁（每请求读 env，EO 冷启动 env 时序兜底，锐鉴 #91）
+    # 请求期惰性求解门禁（每请求读 env，EO 冷启动 env 时序兜底）
     if ensure_require_headers() and headers is not None:
         # 仅约束 HTTP 传输：stdio 无请求头是常态，不适用本开关
         if not overrides:
@@ -533,9 +533,9 @@ def configure_require_headers(cli_flag: bool | None = None) -> bool:
 
     CLI 显式传参优先；未传时兜底读 CNB_AGENTIC_MEMORY_REQUIRE_HEADERS
     （truthy 语义 1/true/yes/on）。main() 之外还存在不经 CLI 的部署形态：
-    Serverless 适配层直接 import mcp 单例（#91），env 兜底仅作用于 argparse
-    default，不经过 main() 则开关恒 False（幽明 #91 实测）——此类入口必须
-    显式调用本函数激活。返回激活结果，供适配层做启动期告警。
+    Serverless 适配层直接 import mcp 单例，env 兜底仅作用于 argparse
+    default，不经过 main() 则开关恒 False——此类入口必须显式调用本函数激活。
+    返回激活结果，供适配层做启动期告警。
 
     注意：无参（env 兜底）路径在 EO 冷启动可能因 env 注入时序而滞后，请求期
     语义以 ensure_require_headers 为准——本函数只登记 CLI 显式值与启动期快照。
@@ -553,8 +553,8 @@ def ensure_require_headers() -> bool:
     """请求期门禁求解（_client 每次进入时调用）：CLI 显式传参优先，否则读 env。
 
     每请求直接求解而非 import 期缓存——EO 冷启动/实例重建时 env 注入与模块
-    import 的时序不受本仓库控制（锐鉴 #91 阻塞项），一次性求解在 env 落后时
-    门禁恒 False 且零告警；os.environ.get 成本可忽略，无需缓存。
+    import 的时序不受本仓库控制，一次性求解在 env 落后时门禁恒 False 且零告警；
+    os.environ.get 成本可忽略，无需缓存。
     """
     if _require_headers_explicit:
         return _require_headers
@@ -566,7 +566,7 @@ def build_transport_security(
 ) -> TransportSecuritySettings:
     """构建 DNS rebinding 防护白名单：localhost 族 + 指定基名的双形态展开。
 
-    主流程（--host 监听）与对外部署适配层（#91 EdgeOne 等）共用同一实现，
+    主流程（--host 监听）与对外部署适配层（EdgeOne 等）共用同一实现，
     避免双份白名单生成逻辑漂移。host_base 为对外 Host 基名（监听地址或反代/
     平台转发后的对外域名），裸 IPv6 由内部 whitelist_host_base 统一裹方括号。
 
@@ -701,7 +701,7 @@ def main(argv: list[str] | None = None) -> None:
         # 监听地址直连形式，不提供扩展入口：对外部署一律置于反代之后，访问
         # 控制与 Host 白名单属代理层职责（扩展白名单入口已按 #85 裁剪——其
         # 输入形态 × 匹配语义矩阵的维护成本远超防御价值，见 PR !84 八轮复审）。
-        # 白名单生成实现在 build_transport_security（#91 起与对外部署适配层共用）。
+        # 白名单生成实现在 build_transport_security（与对外部署适配层共用）。
         security = build_transport_security(args.host)
 
         mcp.run(
