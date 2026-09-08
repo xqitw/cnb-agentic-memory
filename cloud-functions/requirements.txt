@@ -1,7 +1,4 @@
 # EO 构建时依赖声明（用户声明优先级最高，压过 import 自动检测）。
-# fastapi 为 ASGI 框架检测与适配层依赖；mcp extra 内含 MCP SDK 本体。
-fastapi
-# EO 构建时依赖声明（用户声明优先级最高，压过 import 自动检测）。
-# fastapi 为 ASGI 框架检测与适配层依赖；mcp extra 内含 MCP SDK 本体。
+# fastapi 为 ASGI 框架检测与适配层依赖；cnb-agentic-memory[mcp] 内含 MCP SDK 本体。
 fastapi
 cnb-agentic-memory[mcp]==2.0.4

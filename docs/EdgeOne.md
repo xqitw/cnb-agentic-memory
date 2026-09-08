@@ -26,7 +26,7 @@
 
 ## 依赖说明
 
-`cloud-functions/requirements.txt` 显式声明依赖（用户声明优先级最高，压过 import 自动检测）。当前 `cnb-agentic-memory` 以 git URL 引用——#91 新增的 `build_transport_security` 尚未发布到 PyPI，发版后应改钉版本号。
+`cloud-functions/requirements.txt` 显式声明依赖（用户声明优先级最高，压过 import 自动检测），钉 `cnb-agentic-memory[mcp]==2.0.4`。**时序约束：合并后先打 tag `v2.0.4` 触发 CI 发 PyPI，发版成功后才可触发 EO 部署**（PyPI 无 2.0.4 时构建解析失败）；升版时须同步钉号。
 
 ## 待实测风险点（结论回填 #91）
 
