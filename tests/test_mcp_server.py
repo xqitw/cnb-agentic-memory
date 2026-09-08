@@ -701,7 +701,7 @@ def test_env_var_names_documented_correctly() -> None:
 
 
 def test_security_settings_origin_and_ipv6(monkeypatch: pytest.MonkeyPatch) -> None:
-    """防护白名单：Origin 随 Host 同源生成）；IPv6 监听加方括号。"""
+    """防护白名单：Origin 随 Host 同源生成；IPv6 监听加方括号。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 

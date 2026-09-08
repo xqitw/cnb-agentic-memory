@@ -477,9 +477,9 @@ def parse_host(value: str | None) -> str:
 
     空串透传 uvicorn 会绑定全部网卡（等效 0.0.0.0），却绕过通配安全提醒，
     故与 parse_transport/parse_port 同口径清洗。host:port 合并形态（把端口
-    并进 host 的常见敲错）按监听地址语义拒绝，不复用白名单归一化（
+    并进 host 的常见敲错）按监听地址语义拒绝，不复用白名单归一化——
     normalize 判其合法，CLI 不报错但 uvicorn 启动即崩，env 通道
-    还会把剥壳基名混入白名单）。环境变量兜底走 parse_host_env，告警回落
+    还会把剥壳基名混入白名单。环境变量兜底走 parse_host_env，告警回落
     不崩启动。
     """
     stripped = (value or "").strip()
@@ -488,7 +488,7 @@ def parse_host(value: str | None) -> str:
         return DEFAULT_HOST
     try:
         # 取校验返回值而非原值：[IPv6]/[IPv6]:port 剥壳为裸地址，带壳原值
-        # 直传 uvicorn 会被当作主机名 sock.bind 即崩（防御性：项）
+        # 直传 uvicorn 会被当作主机名 sock.bind 即崩，此处防御性拦截
         return validate_listen_host(stripped)
     except ValueError as err:
         raise argparse.ArgumentTypeError(f"监听地址无法解析：{stripped!r}（{err}）") from None
