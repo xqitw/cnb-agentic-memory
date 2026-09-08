@@ -156,9 +156,7 @@ def test_cli(number: int) -> None:
         [sys.executable, "-m", "cnb_agentic_memory.cli", "get", "999999"],
         capture_output=True,
         text=True,
-        env={
-            k: v for k, v in env.items() if k not in ("CNB_AGENTIC_MEMORY_TOKEN", "CNB_AGENTIC_MEMORY_REPO")
-        },
+        env={k: v for k, v in os.environ.items() if not k.startswith("CNB_AGENTIC_MEMORY")},
         timeout=60,
     )
     record("cli 配置缺失 exit 2", r2.returncode == 2, f"exit={r2.returncode}")
@@ -339,13 +337,21 @@ async def main() -> None:
     # 硬门禁（防误写正式记忆库）：凭据隔离为主（IT 独立变量），盘点为辅——
     # 1) 仓库中若存在非 it-* 前缀的既有数据，说明不是专用测试仓库，拒绝运行
     foreign: list[str] = []
-    for page in range(1, 21):  # 翻页穷尽（上限 20 页防御性截断）
+    exhausted = False
+    for page in range(1, 21):
         batch = await client.list_issues(page=page, page_size=100)
         if not batch:
+            exhausted = True
             break
         foreign += [str(i.number) for i in batch if not i.title.startswith("it-")]
+        if len(batch) < 100:  # 不足额页即末页
+            exhausted = True
+            break
     if foreign:
         sys.exit(f"目标仓库存在非测试数据（issue {foreign[:5]}...），疑似正式记忆库，拒绝运行")
+    if not exhausted:
+        # 盘点被上限截断：盘点不全恰是最危险的「疑似正式库」形态，显式拒绝而非放行
+        sys.exit("仓库 issue 数超过盘点上限（20 页 × 100），无法确认为专用测试仓库，拒绝运行")
     # 2) 非交互环境（CI/管道）必须显式声明 CNB_AGENTIC_MEMORY_IT_CONFIRM=yes；
     #    交互环境键入 yes 确认。双重确认防 shell 继承的正式库 env 混入
     if os.environ.get("CNB_AGENTIC_MEMORY_IT_CONFIRM") != "yes":
