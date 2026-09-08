@@ -635,7 +635,7 @@ async def test_search_skips_unreadable_hit(client: CNBApiClient) -> None:
     ]
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/knowledge/base/query").respond(200, json=kb_items)
-        # #21 回读 500 失败，#22 正常
+        # issue 21 回读 500 失败，issue 22 正常
         mock.get("/group/repo/-/issues/21").respond(500, json={"message": "boom"})
         mock.get("/group/repo/-/issues/22").respond(200, json=issue_payload(22, "记忆乙"))
 
