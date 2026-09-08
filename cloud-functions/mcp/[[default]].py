@@ -89,4 +89,15 @@ async def _reject_non_mcp_methods(_request: Request) -> JSONResponse:
     )
 
 
+@app.api_route("/debug-headers", methods=["GET", "POST"], include_in_schema=False)
+async def _debug_headers(request: Request) -> dict:
+    # 临时调试端点（#91 实测用，回填结论后删除）：回显 EO 实际转发的头形态
+    return {
+        "host": request.headers.get("host"),
+        "origin": request.headers.get("origin"),
+        "x-forwarded-host": request.headers.get("x-forwarded-host"),
+        "x-forwarded-proto": request.headers.get("x-forwarded-proto"),
+    }
+
+
 app.mount("/", _mcp_asgi)
