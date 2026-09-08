@@ -1,8 +1,8 @@
 """集成测试：真实 CNB API 全链路验证（发布前手动执行，不进 CI）。
 
 用法：
-    CNB_AGENTIC_MEMORY_TOKEN=<token> CNB_AGENTIC_MEMORY_REPO=<org/repo> \
-        python scripts/integration_test.py
+    CNB_AGENTIC_MEMORY_IT_TOKEN=<token> CNB_AGENTIC_MEMORY_IT_REPO=<org/repo> \
+        python scripts/integration_test.py   # 非交互环境加 CNB_AGENTIC_MEMORY_IT_CONFIRM=yes
 
 - 面向专用测试仓库（会真实写入 Issue），禁止指向正式记忆仓库
 - 段落式执行，单段失败不中断，末尾汇总 PASS/FAIL 清单
@@ -107,10 +107,10 @@ async def test_search_semantic(memory: Memory, marker: str) -> None:
         print(f"  语义检索异常（打印不判失败）: {err}")
 
 
-async def test_pool_isolation(repo: str) -> None:
-    """连接池复用与无效凭据隔离。"""
+async def test_pool_isolation(token: str, repo: str) -> None:
+    """连接池复用与无效凭据隔离（凭据由 main 显式传入，禁止读 shell 继承 env）。"""
     section("连接池")
-    client = CNBApiClient(token=os.environ["CNB_AGENTIC_MEMORY_IT_TOKEN"], repo=repo)
+    client = CNBApiClient(token=token, repo=repo)
     memory = Memory(client)
     issues = await memory.list_recent(limit=1)  # 真实请求走一次
     issues2 = await memory.list_recent(limit=1)
@@ -295,8 +295,8 @@ def test_mcp_http(number: int) -> None:
 
         # 带凭据头：放行并返回真实结果
         auth = {
-            "X-CNB-Token": os.environ["CNB_AGENTIC_MEMORY_TOKEN"],
-            "X-CNB-Repo": os.environ["CNB_AGENTIC_MEMORY_REPO"],
+            "X-CNB-Token": os.environ["CNB_AGENTIC_MEMORY_IT_TOKEN"],
+            "X-CNB-Repo": os.environ["CNB_AGENTIC_MEMORY_IT_REPO"],
         }
         sid2 = session_of(auth)
         r2 = httpx.post(base, json=payload, headers={**headers, **auth, "mcp-session-id": sid2}, timeout=30)
