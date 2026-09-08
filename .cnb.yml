@@ -24,7 +24,8 @@ include:
   - name: markdownlint
     script: npx --yes markdownlint-cli2 '**/*.md'
 
-# 复用片段:多版本 Python 测试（3.11-3.14，与 classifiers 声明一致）
+# 复用片段:多版本 Python 测试（3.10-3.14，与 classifiers 声明一致；3.10 为 EO
+# Python 运行时版本，#91 部署实测要求）
 # dev-base 内置 uv，用 UV_PYTHON 环境变量指定版本（uv 会按需自动下载对应 Python）
 .python-env-base: &python-env-base
   docker:
@@ -33,6 +34,13 @@ include:
     cpus: 2
   env:
     UV_CACHE_DIR: /root/.cache/uv
+
+.python-310: &python-310
+  <<: *python-env-base
+  env:
+    UV_CACHE_DIR: /root/.cache/uv
+    UV_PYTHON: "3.10"
+  stages: *test-stages
 
 .python-311: &python-311
   <<: *python-env-base
@@ -155,6 +163,7 @@ include:
 
 main:
   pull_request:
+    - <<: *python-310
     - <<: *python-311
     - <<: *python-312
     - <<: *python-313

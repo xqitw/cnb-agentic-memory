@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import httpx
@@ -105,7 +105,7 @@ def _updated_at_sort_key(issue: Issue) -> tuple[int, str]:
         except ValueError:
             return (0, raw)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
+            dt = dt.replace(tzinfo=timezone.utc)
         return (1, f"{dt.timestamp():020.6f}")
     return (0, raw)
 

@@ -7,7 +7,7 @@ name = "cnb-agentic-memory"
 version = "2.0.3"
 description = "CNB Issue 智能体记忆系统（cnb-agentic-memory）是基于 CNB 平台构建的通用记忆工具，把 CNB 的 issue、知识库、检索能力组合成一个开箱即用的智能体记忆层。"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "cnb-agentic-memory Contributors" }]
 keywords = [
@@ -24,6 +24,7 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -87,7 +88,7 @@ addopts = "--cov=cnb_agentic_memory --cov-report=term-missing --cov-fail-under=9
 
 [tool.ruff]
 line-length = 110
-target-version = "py311"
+target-version = "py310"
 
 [tool.ruff.lint]
 # PLC0415（import-outside-top-level）为 AGENTS.md「禁止函数内 import」的机器护栏
@@ -103,7 +104,7 @@ ignore = ["E501"]
 "tests/**" = ["PLC0415"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 packages = ["cnb_agentic_memory"]
 mypy_path = "src"
 ignore_missing_imports = true
