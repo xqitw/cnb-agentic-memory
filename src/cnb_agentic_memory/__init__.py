@@ -4,11 +4,17 @@
 一记忆 = 一 Issue，number 是记忆唯一标识。
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .api import ApiError, CNBApiClient, ConfigError
 from .memory import Memory, MemoryRuleError, SearchResult, WriteResult, normalize_title
 from .models import Comment, Issue, KbChunk, Label
 
-__version__ = "2.0.3"
+try:
+    # pyproject [project].version 为单一来源（手工硬编码会在发版时漂移，实测翻车）
+    __version__ = version("cnb-agentic-memory")
+except PackageNotFoundError:  # 源码直用未安装时兜底，保持可导入
+    __version__ = "0+unknown"
 
 __all__ = [
     "__version__",
