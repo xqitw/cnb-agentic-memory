@@ -1,0 +1,6 @@
+# EO 构建时依赖声明（用户声明优先级最高，压过 import 自动检测）。
+# fastapi 为 ASGI 框架检测与适配层依赖；mcp extra 内含 MCP SDK 本体。
+fastapi
+# 暂以 git 引用：#91 新增的 build_transport_security 尚未发布到 PyPI，
+# 发版后改为钉版本号（如 cnb-agentic-memory[mcp]==2.0.4）
+cnb-agentic-memory[mcp] @ git+https://cnb.cool/xqitw/cnb-agentic-memory.git

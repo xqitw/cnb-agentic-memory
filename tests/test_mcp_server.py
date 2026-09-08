@@ -762,6 +762,42 @@ def test_whitelist_host_base() -> None:
     assert whitelist_host_base("[::1]") == "[::1]"  # 已带壳（防御性，正常入口不会传入）
 
 
+def test_build_transport_security_default_http_origins() -> None:
+    """白名单构建：localhost 族 + 传入基名，Host/Origin 双形态展开（main 与适配层共用实现）。"""
+    from cnb_agentic_memory.mcp_server import build_transport_security
+
+    bases = ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", "myhost.example.com"]
+    sec = build_transport_security("myhost.example.com")
+
+    assert sec.enable_dns_rebinding_protection is True
+    # Host：每基名 :* 端口通配 + 无端口精确两形态
+    assert set(sec.allowed_hosts) == {f"{b}:*" for b in bases} | set(bases)
+    # Origin：默认 http 单 scheme，同样两形态
+    assert set(sec.allowed_origins) == {f"http://{b}" for b in bases} | {f"http://{b}:*" for b in bases}
+
+
+def test_build_transport_security_https_origins_for_edgeone() -> None:
+    """HTTPS 平台适配层传 origin_schemes=("https",)：Origin 全量 https，无 http 条目。"""
+    from cnb_agentic_memory.mcp_server import build_transport_security
+
+    sec = build_transport_security("proj.edgeone.app", origin_schemes=("https",))
+
+    assert sec.allowed_origins  # 非空
+    assert all(o.startswith("https://") for o in sec.allowed_origins)
+    assert "https://proj.edgeone.app" in sec.allowed_origins
+    assert "https://proj.edgeone.app:*" in sec.allowed_origins
+
+
+def test_build_transport_security_ipv6_base_bracketed() -> None:
+    """裸 IPv6 基名内部统一裹方括号（复用 whitelist_host_base），调用方无需预处理。"""
+    from cnb_agentic_memory.mcp_server import build_transport_security
+
+    sec = build_transport_security("2001:db8::1")
+
+    assert "[2001:db8::1]:*" in sec.allowed_hosts
+    assert "[2001:db8::1]" in sec.allowed_hosts
+
+
 def test_resolve_overrides_rejects_bare_header_names() -> None:
     """仅认 X-CNB-* 完整头名：裸 token/repo/base-url 别名一律忽略（防通用头名冲突）。"""
     from cnb_agentic_memory.api import resolve_overrides_from_headers

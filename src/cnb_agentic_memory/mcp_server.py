@@ -523,6 +523,39 @@ def whitelist_host_base(host: str) -> str:
         return host
 
 
+def build_transport_security(
+    host_base: str, *, origin_schemes: tuple[str, ...] = ("http",)
+) -> TransportSecuritySettings:
+    """构建 DNS rebinding 防护白名单：localhost 族 + 指定基名的双形态展开。
+
+    主流程（--host 监听）与对外部署适配层（#91 EdgeOne 等）共用同一实现，
+    避免双份白名单生成逻辑漂移。host_base 为对外 Host 基名（监听地址或反代/
+    平台转发后的对外域名），裸 IPv6 由内部 whitelist_host_base 统一裹方括号。
+
+    框架对 :* 通配的匹配要求 Host/Origin 值带显式端口（startswith(base + ":")），
+    而浏览器在默认端口（80/443）下不序列化端口（WHATWG origin 序列化），故每个
+    基名同时生成 :* 端口通配（非标准端口兜底）与无端口精确（默认端口场景）两种
+    Host 条目，恶意域名仍被精确匹配语义拒之门外。
+
+    origin_schemes 为 Origin 白名单 scheme 集：本机直连为纯 HTTP（uvicorn 无
+    TLS）默认 http；经 HTTPS 平台对外暴露时浏览器 Origin 序列化为 https，
+    适配层传 ("https",)。
+    """
+    host_bases = dict.fromkeys(
+        ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", whitelist_host_base(host_base)]
+    )
+    allowed_hosts = [f"{b}:*" for b in host_bases] + list(host_bases)
+    allowed_origins: list[str] = []
+    for scheme in origin_schemes:
+        allowed_origins += [f"{scheme}://{b}" for b in host_bases]
+        allowed_origins += [f"{scheme}://{b}:*" for b in host_bases]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+    )
+
+
 def parse_transport(value: str | None) -> str:
     """解析传输协议：空白/大小写/下划线连字符笔误清洗，非法值回落 stdio。
 
@@ -631,22 +664,9 @@ def main(argv: list[str] | None = None) -> None:
         # 监听地址直连形式，不提供扩展入口：对外部署一律置于反代之后，访问
         # 控制与 Host 白名单属代理层职责（扩展白名单入口已按 #85 裁剪——其
         # 输入形态 × 匹配语义矩阵的维护成本远超防御价值，见 PR !84 八轮复审）。
-        # 框架对 :* 通配的匹配要求 Host/Origin 值带显式端口（startswith(base + ":")），
-        # 而浏览器在默认端口（80/443）下不序列化端口（WHATWG origin 序列化），故每个
-        # 基名同时生成 :* 端口通配（非标准端口兜底）与无端口精确（默认端口场景）两种
-        # Host 条目，恶意域名仍被精确匹配语义拒之门外。
-        host_bases = dict.fromkeys(
-            ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", whitelist_host_base(args.host)]
-        )
-        # Origin 口径：本机直连为纯 HTTP（uvicorn 无 TLS）单 scheme，含通配与精确两形态
-        allowed_hosts = [f"{b}:*" for b in host_bases] + list(host_bases)
-        allowed_origins = [f"http://{b}" for b in host_bases] + [f"http://{b}:*" for b in host_bases]
+        # 白名单生成实现在 build_transport_security（#91 起与对外部署适配层共用）。
+        security = build_transport_security(args.host)
 
-        security = TransportSecuritySettings(
-            enable_dns_rebinding_protection=True,
-            allowed_hosts=allowed_hosts,
-            allowed_origins=allowed_origins,
-        )
         mcp.run(
             transport=args.transport,
             host=args.host,
