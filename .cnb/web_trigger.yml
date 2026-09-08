@@ -5,6 +5,7 @@ branch:
       - name: 一键部署
         description: 一键部署到腾讯云 EdgeOne Pages（streamable-http 承载 MCP Server）
         event: web_trigger_deploy
+        isDefault: true
         inputs:
           DEPLOY_NAME:
             name: 项目名称

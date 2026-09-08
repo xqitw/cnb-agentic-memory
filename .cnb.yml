@@ -151,7 +151,7 @@ include:
   services:
     - docker
   imports:
-    - https://cnb.cool/xqitw/api-key/-/blob/main/env.yml
+    - https://cnb.cool/xqitw/api-key/-/blob/main/env-eo.yml
   stages:
     - name: 部署到腾讯云 EdgeOne Pages
       image: node:24
