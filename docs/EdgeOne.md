@@ -32,7 +32,9 @@
 ## 待实测风险点（结论回填 #91）
 
 - [x] Python 运行时具体版本：**3.10 硬编码**（实测构建日志 + 官方文档「Python 版本 | 3.10」；uv 强制 `--python-version 3.10` 解析）——项目 requires-python 已随之降为 >=3.10
-- [ ] EO 转发后 Host/Origin 头实际形态与白名单匹配（适配层按「无端口对外域名 + https Origin」生成）
-- [ ] EO 运行时是否执行 ASGI lifespan：session manager 启动挂在外层 FastAPI lifespan 上（适配层已按 SDK 官方挂载模式手动进入子应用 `lifespan_context`），若平台不跑 lifespan 则启动即 500
-- [ ] `requirements.txt` 的 git URL 引用在 EO 构建环境可安装性（需 git 且可匿名克隆 CNB 公开仓库）
+- [x] EO 转发后 Host/Origin 头实际形态与白名单匹配：自定义域名直连（Host `cam.xqitw.cool`，无端口）ping 200，与适配层「无端口对外域名 + https Origin」生成口径吻合
+- [x] EO 运行时执行 ASGI lifespan：**执行**——真实部署 POST ping 200（session manager 须经 lifespan 启动才可处理请求）
+- [x] `requirements.txt` 的 git URL 引用在 EO 构建环境可安装性：**可行**（uv 克隆 CNB 公开仓库成功）
+- [x] 自定义域名接入：EO 后台提示 CNAME → DNSPod 添加（主机记录 `cam` / 类型 `CNAME` / 记录值 `cam.xqitw.cool.pages.dnsoe6.com`），证书自动签发，分钟级生效
 - [ ] `maxDuration=120` 实际生效情况与冷启动延迟（实例回收后 import + 连接池重建）
+- 备注：默认域名 `*.edgeone.app` 实测全 404（自定义域名正常），疑似部署环境绑定差异，未深究
