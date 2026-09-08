@@ -139,7 +139,6 @@ include:
 # DEPLOY_NAME/DEPLOY_ENV 不在此硬编码(幽明 #91 暗缝:与按钮 inputs 同名双写,
 # 覆盖优先级官方未明载,选「预览环境」可能被静默覆盖为生产)——以按钮 inputs 为
 # 唯一来源,其 default 已兜底项目名与生产环境
-# 注意:事件挂 "*" 测试期全分支可触发生产部署(与 portfolio 同款),稳定后建议收紧 main
 .edgeone-deploy: &edgeone-deploy
   services:
     - docker
@@ -164,11 +163,6 @@ main:
   push:
     - *git-sync-pipeline
 
-# web 触发器:任意分支可在 web 页面手动触发部署到 EdgeOne Pages
-"*":
-  web_trigger_deploy:
-    - *edgeone-deploy
-
 $:
   # 云原生开发环境
   vscode:
@@ -187,6 +181,9 @@ $:
       stages:
         - name: vscode go
           type: vscode:go
+  # web 触发器:web 页面手动触发部署到 EdgeOne Pages($ 兜底分支,官方 Schema 建议)
+  web_trigger_deploy:
+    - *edgeone-deploy
   # 打 tag (v*):测试 + 发 PyPI + code-wiki + git release + 同步至 GitHub + 发布 Skill
   tag_push:
     - <<: *pypi-publish
