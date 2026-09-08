@@ -1,7 +1,8 @@
-# CI:测试 + 类型检查 + 发布到公网 PyPI + code-wiki + git release + 同步 GitHub 镜像 + 发布 Skill 到 skillhub.cn
+# CI:测试 + 类型检查 + 发布到公网 PyPI + code-wiki + git release + 同步 GitHub 镜像 + 发布 Skill + web 触发 EdgeOne Pages 部署
 # 结构对齐 xqitw/journapi:
 #   - main 分支 PR:跑测试(ruff + mypy + pytest + markdownlint)
 #   - 打 tag (v*):测试 -> 构建发布 PyPI -> code-wiki -> git release -> 同步 GitHub -> 发布 Skill
+#   - web 触发器:任意分支可在 web 页面手动触发部署到 EdgeOne Pages(对齐 xqitw/portfolio)
 # 额外挂载:记忆仓库的 issue 事件触发知识库同步(见 $ 分支)
 #
 # 引入 xqitw/pipes 模板聚合文件,提供 .code-wiki-pipeline / .release-pipeline
@@ -132,6 +133,27 @@ include:
           --token "$SKILL_HUB_CN_API_KEY" \
           --changelog "$CNB_TAG_MESSAGE"
 
+# 复用片段:web 触发部署到腾讯云 EdgeOne Pages(结构对齐 xqitw/portfolio 的部署流水线)
+# 密钥来自 xqitw/api-key 的 env.yml(EDGE_ONE_PAGES_API_KEY),不落库;
+# EO 构建产物只需 cloud-functions/ + edgeone.json + 文档,git 痕迹与 CI 配置不入包
+.edgeone-deploy: &edgeone-deploy
+  services:
+    - docker
+  env:
+    DEPLOY_ENV: "production"
+    DEPLOY_NAME: "cnb-agentic-memory"
+  imports:
+    - https://cnb.cool/xqitw/api-key/-/blob/main/env.yml
+  stages:
+    - name: 部署到腾讯云 EdgeOne Pages
+      image: node:24
+      script: |
+        rm -rf .git/
+        rm -rf .cnb/
+        rm -rf README.md
+        rm -rf .cnb.yml
+        npx edgeone pages deploy /workspace -n ${DEPLOY_NAME} -t ${EDGE_ONE_PAGES_API_KEY} -e ${DEPLOY_ENV}
+
 main:
   pull_request:
     - <<: *python-311
@@ -141,6 +163,11 @@ main:
   # 推送到 main:同步代码至 GitHub 镜像仓库
   push:
     - *git-sync-pipeline
+
+# web 触发器:任意分支可在 web 页面手动触发部署到 EdgeOne Pages
+"*":
+  web_trigger_deploy:
+    - *edgeone-deploy
 
 $:
   # 云原生开发环境
