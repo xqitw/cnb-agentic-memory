@@ -128,10 +128,10 @@ def build_client_from_headers(headers: Mapping[str, str] | None) -> CNBApiClient
 class SharedClientPool:
     """按配置键缓存的 CNBApiClient 池（MCP 工具层专用，SDK 用户不受影响）。
 
-    #83 建议第 5 条：HTTP 共享部署下每个工具调用新建客户端（TLS 握手）开销
-    可观。按配置键缓存复用连接池。
+    HTTP 共享部署下每个工具调用新建客户端（TLS 握手）开销可观，按配置键
+    缓存复用连接池。
 
-    生命周期与边界（复审阻塞项整改）：
+    生命周期与边界：
 
     - **条目保活复用**：acquire/release 仅做同步字典计数，引用归零不关
       连接——串行工具调用主路径每次 acquire 均命中缓存；关闭统一交显式
@@ -320,7 +320,7 @@ class CNBApiClient:
 
     def __repr__(self) -> str:
         """收敛 repr：token 仅呈现摘要前 8 字符——池条目长期驻留进程内，
-        dump/诊断输出不得携带明文凭据（#83 建议第 5 条复审建议）。"""
+        dump/诊断输出不得携带明文凭据。"""
         token_head = hashlib.sha256(self.token.encode()).hexdigest()[:8] if self.token else "<empty>"
         return (
             f"CNBApiClient(repo={self.repo!r}, base_url={self.base_url!r}, "

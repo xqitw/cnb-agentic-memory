@@ -65,7 +65,7 @@ def test_meta_field_missing_falls_back(
     """元数据头缺失时兜底 None/__version__，而非字符串 'None'。
 
     PackageMetadata 底层是 email.message.Message，缺失 key 返回 None
-    而非抛 KeyError（评审发现：原 except KeyError 为死代码）。
+    而非抛 KeyError（缺失 key 返回 None 而非抛 KeyError 的运行时实态）。
     """
     from email.message import Message
 
@@ -77,7 +77,7 @@ def test_meta_field_missing_falls_back(
 
 
 def test_tool_descriptions_embed_title_guidance() -> None:
-    """title 撰写指导必须内嵌在 memory_write 工具描述（评审要求）。"""
+    """title 撰写指导必须内嵌在 memory_write 工具描述。"""
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_write")
     assert "关键词" in tool.description
     assert "keyword" in tool.description.lower()
@@ -91,7 +91,7 @@ def test_tool_descriptions_note_append_semantics() -> None:
 
 
 def test_memory_write_returns_parts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """memory_write 工具返回 JSON，超长拆分时含全部分片（评审：循迹不漏片）。"""
+    """memory_write 工具返回 JSON，超长拆分时含全部分片。"""
     import asyncio
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
@@ -166,7 +166,7 @@ def test_memory_get_api_error_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_memory_write_partial_success_transparent(monkeypatch):
-    """拆分部分成功：MemoryRuleError 的循迹信息透传给智能体（评审 warning）。"""
+    """拆分部分成功：MemoryRuleError 的循迹信息透传给智能体。"""
     import asyncio
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
@@ -199,7 +199,7 @@ def test_memory_write_partial_success_transparent(monkeypatch):
 
 
 def test_memory_list_state_invalid_rejected(monkeypatch):
-    """state 非法值前置拒绝（评审 warning：不再打到服务端吃 4xx）。"""
+    """state 非法值前置拒绝（不再打到服务端吃 4xx）。"""
     import asyncio
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
@@ -516,7 +516,7 @@ def test_tools_use_request_header_config(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_resolve_overrides_requires_full_credentials() -> None:
-    """安全约定（阻塞项修复）：token+repo 齐备才启用头覆盖，env 凭据不外泄。"""
+    """安全约定：token+repo 齐备才启用头覆盖，env 凭据不外泄。"""
     from cnb_agentic_memory.api import resolve_overrides_from_headers
 
     # 只带 base_url头：拒绝头模式（env token/repo 不会发往头的 base_url）
@@ -565,7 +565,7 @@ def test_resolve_overrides_duplicate_header_first_value() -> None:
 
 
 def test_parse_port_lenient() -> None:
-    """端口宽松解析：空/非法/越界回落 8000（阻塞评审建议2）。"""
+    """端口宽松解析：空/非法/越界回落 8000。"""
     from cnb_agentic_memory.mcp_server import parse_port
 
     assert parse_port(None) == 8000
@@ -586,7 +586,7 @@ def test_main_port_env_empty_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_parse_transport_lenient() -> None:
-    """transport 环境变量宽松解析：笔误清洗，非法回落 stdio（复审 warning）。"""
+    """transport 环境变量宽松解析：笔误清洗，非法回落 stdio。"""
     from cnb_agentic_memory.mcp_server import parse_transport
 
     assert parse_transport(None) == "stdio"
@@ -621,7 +621,7 @@ def test_main_transport_env_invalid_does_not_crash(monkeypatch: pytest.MonkeyPat
 def test_main_wildcard_host_warns(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """HTTP transport 监听通配地址时向 stderr 打安全提醒（复审建议2），stdio/本机地址不提醒。"""
+    """HTTP transport 监听通配地址时向 stderr 打安全提醒，stdio/本机地址不提醒。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
@@ -639,7 +639,7 @@ def test_main_wildcard_host_warns(
 
 
 def test_parse_host_lenient() -> None:
-    """host 宽松解析：空值/空白回落 127.0.0.1（复审 warning1：MCP_HOST 空串绑定全网卡且警告失效）。"""
+    """host 宽松解析：空值/空白回落 127.0.0.1（MCP_HOST 空串会绑定全网卡且警告失效）。"""
     from cnb_agentic_memory.mcp_server import parse_host
 
     assert parse_host(None) == "127.0.0.1"
@@ -651,7 +651,7 @@ def test_parse_host_lenient() -> None:
 def test_main_empty_host_env_falls_back(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """MCP_HOST 键存在值为空：回落 127.0.0.1 且不触发通配警告（复审复现场景）。"""
+    """MCP_HOST 键存在值为空：回落 127.0.0.1 且不触发通配警告。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "")
@@ -664,7 +664,7 @@ def test_main_empty_host_env_falls_back(
 def test_dns_rebinding_protection_passed_on_wildcard(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """通配监听时透传 TransportSecuritySettings（复审 info：防护与警告对齐）。"""
+    """通配监听时透传 TransportSecuritySettings（防护与警告对齐）。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
@@ -684,7 +684,7 @@ def test_dns_rebinding_protection_passed_on_wildcard(
 
 
 def test_env_var_names_documented_correctly() -> None:
-    """守护：help 文本中的环境变量名与 env() 实际读取一致（复审 warning2 防回归）。"""
+    """守护：help 文本中的环境变量名与 env() 实际读取一致（防回归）。"""
     import inspect
 
     src = inspect.getsource(mcp_server.main)
@@ -701,7 +701,7 @@ def test_env_var_names_documented_correctly() -> None:
 
 
 def test_security_settings_origin_and_ipv6(monkeypatch: pytest.MonkeyPatch) -> None:
-    """防护白名单：Origin 随 Host 同源生成（复审 warning1）；IPv6 监听加方括号（warning2）。"""
+    """防护白名单：Origin 随 Host 同源生成）；IPv6 监听加方括号。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
@@ -722,7 +722,7 @@ def test_security_settings_origin_and_ipv6(monkeypatch: pytest.MonkeyPatch) -> N
 def test_whitelist_fixed_no_extension_entry(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """白名单固定为 localhost 族 + 监听地址（#85 裁剪）：--allowed-host 已移除，未知域名被拒。"""
+    """白名单固定为 localhost 族 + 监听地址：--allowed-host 已移除，未知域名被拒。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
@@ -735,7 +735,7 @@ def test_whitelist_fixed_no_extension_entry(
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS", "mem.example.com")
     mcp_server.main(["--transport", "streamable-http"])
     captured = capsys.readouterr()
-    # 废弃 env 显式告警（非阻塞行级意见：静默失效会让反代部署升级后全量 421 无提示）
+    # 废弃 env 显式告警（静默失效会让反代部署升级后全量 421 无提示）
     assert "已随 --allowed-host 移除" in captured.err
     # 示例文案完整：锁定 Origin 空值引号示例不回退（不论塌陷机理，输出形态必须如此）
     assert 'proxy_set_header Origin "";' in captured.err
@@ -752,7 +752,7 @@ def test_whitelist_fixed_no_extension_entry(
 
 
 def test_whitelist_host_base() -> None:
-    """监听地址转白名单基名：裸 IPv6 裹方括号，域名/IPv4 原样（#85 裁剪后仅此一职责）。"""
+    """监听地址转白名单基名：裸 IPv6 裹方括号，域名/IPv4 原样（仅此一职责）。"""
     from cnb_agentic_memory.mcp_server import whitelist_host_base
 
     assert whitelist_host_base("myhost") == "myhost"
@@ -884,7 +884,7 @@ def test_malformed_host_cli_errors_env_falls_back(
         mcp_server.main(["--transport", "streamable-http", "--host", "myhost:abc"])
     assert exc_info.value.code == 2
 
-    # env 注入畸形值（含全角冒号）：告警回落默认地址，服务照常启动（复审阻塞项）
+    # env 注入畸形值（含全角冒号）：告警回落默认地址，服务照常启动
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "127.0.0.1：8443")
     mcp_server.main(["--transport", "streamable-http"])
     captured = capsys.readouterr()
@@ -912,7 +912,7 @@ def test_validate_listen_host_rejects_invalid() -> None:
     from cnb_agentic_memory.mcp_server import validate_listen_host
 
     bads = [
-        "myhost:8000",  # host:port 合并形态（复审阻塞项主场景）
+        "myhost:8000",  # host:port 合并形态主场景
         "0.0.0.0:8000",  # env 通道混入白名单的场景
         "myhost:abc",
         "127.0.0.1：8443",  # 全角冒号
@@ -925,7 +925,7 @@ def test_validate_listen_host_rejects_invalid() -> None:
         "[myhost]",  # 域名裹方括号
         "[127.0.0.1]",  # IPv4 裹方括号（RFC 3986 方括号仅用于 IPv6）
         "[::1]x",
-        "[::1]:8443",  # 带壳带端口：端口段不静默丢弃（复审 warning），端口用 --port
+        "[::1]:8443",  # 带壳带端口：端口段不静默丢弃，端口用 --port
         "[2001:db8::1]:8443",
     ]
     for bad in bads:
@@ -938,7 +938,7 @@ def test_validate_listen_host_rejects_invalid() -> None:
 def test_main_host_port_merged_cli_errors_env_falls_back(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """host:port 合并形态端到端：CLI exit 2；env 告警回落且基名不混入白名单（复审阻塞项）。"""
+    """host:port 合并形态端到端：CLI exit 2；env 告警回落且基名不混入白名单。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
@@ -957,7 +957,7 @@ def test_main_host_port_merged_cli_errors_env_falls_back(
     security = calls[-1]["transport_security"]
     assert not any("0.0.0.0" in h for h in security.allowed_hosts)
 
-    # env 带壳 IPv6 带端口：端口段不再静默丢弃，告警回落（复审 warning：
+    # env 带壳 IPv6 带端口：端口段不再静默丢弃，告警回落（
     # --host [::1]:9000 原先实际落 8000 且 env 通道无告警）
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_MCP_HOST", "[::1]:8000")
     mcp_server.main(["--transport", "streamable-http"])
@@ -971,7 +971,7 @@ def test_main_host_port_merged_cli_errors_env_falls_back(
 def test_main_bracketed_ipv6_host_stripped(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """CLI 带壳 IPv6 成功路径 main 级锚定：[::1] 剥壳为裸 ::1 透传，白名单基名正确（复审致命项回归 + info 补对称用例）。"""
+    """CLI 带壳 IPv6 成功路径 main 级锚定：[::1] 剥壳为裸 ::1 透传，白名单基名正确（回归锚定 + info 补对称用例）。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
@@ -983,7 +983,7 @@ def test_main_bracketed_ipv6_host_stripped(
     assert "[::1]" in security.allowed_hosts
     assert not any(h.startswith("[::1]:") and h != "[::1]:*" for h in security.allowed_hosts)
 
-    # CLI 带壳带端口：报 argparse 错误 exit 2（端口由 --port 指定，复审 warning）
+    # CLI 带壳带端口：报 argparse 错误 exit 2（端口由 --port 指定）
     with pytest.raises(SystemExit) as exc_info:
         mcp_server.main(["--transport", "streamable-http", "--host", "[::1]:8000"])
     assert exc_info.value.code == 2
@@ -1002,7 +1002,7 @@ def _ctx_of(headers: dict[str, str] | None) -> Context:
 
 
 def test_require_headers_rejects_anonymous_http(monkeypatch: pytest.MonkeyPatch) -> None:
-    """--require-headers 开启：HTTP 无凭据头请求被拒（MemoryRuleError），凭据齐全放行（#83 建议第 2 条）。"""
+    """--require-headers 开启：HTTP 无凭据头请求被拒（MemoryRuleError），凭据齐全放行。"""
     calls: list[dict] = []
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *a, **kw: calls.append(kw))
 
@@ -1029,7 +1029,7 @@ def test_require_headers_rejects_anonymous_http(monkeypatch: pytest.MonkeyPatch)
     client = asyncio.run(_allowed())
     assert client is not None
 
-    # 拒绝走 _tool_guard 统一出口：调用方拿到可读修复指引 JSON，而非笼统框架异常（复审阻塞项）
+    # 拒绝走 _tool_guard 统一出口：调用方拿到可读修复指引 JSON，而非笼统框架异常
     import asyncio
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
@@ -1040,7 +1040,7 @@ def test_require_headers_rejects_anonymous_http(monkeypatch: pytest.MonkeyPatch)
 def test_require_headers_stdio_unaffected(monkeypatch: pytest.MonkeyPatch) -> None:
     """stdio 无请求头是常态：开关开启下回落环境变量，不自杀。
 
-    覆盖 stdio 真实形态（复审阻塞项）：框架对带 Context 形参的工具无条件
+    覆盖 stdio 真实形态：框架对带 Context 形参的工具无条件
     注入 ctx（恒非 None）但 headers 为 None——_client(None) 手工直调形态
     绕开了误伤分支，必须以 _ctx_of(None)（ctx 非 None + headers=None）锚定。
     """
@@ -1085,7 +1085,7 @@ def test_require_headers_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_shared_client_pool_reuse_and_refcount(monkeypatch: pytest.MonkeyPatch) -> None:
-    """共享池：同键复用实例（#83 第 5 条），引用计数归零不关闭（条目保活，关闭统一走 aclose）。"""
+    """共享池：同键复用实例，引用计数归零不关闭（条目保活，关闭统一走 aclose）。"""
     import asyncio
 
     from cnb_agentic_memory.api import SharedClientPool
@@ -1105,7 +1105,7 @@ def test_shared_client_pool_reuse_and_refcount(monkeypatch: pytest.MonkeyPatch) 
         assert len(pool._clients) == 1
         assert pool._clients[next(iter(pool._clients))][1] == 1
 
-        # 引用归零：条目保活复用（复审阻塞项：归零即关使串行主路径每次
+        # 引用归零：条目保活复用（归零即关使串行主路径每次
         # 缓存未命中，TLS 重握手）——关闭统一走显式 aclose()
         await pool.release(c2)
         assert len(pool._clients) == 1

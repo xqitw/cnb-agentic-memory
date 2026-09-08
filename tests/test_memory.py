@@ -157,7 +157,7 @@ async def test_write_splits_long_content(client: CNBApiClient, monkeypatch: pyte
 
 
 async def test_write_splits_single_long_line(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """无空行的超长单行（代码块/长文本）也能被按行拆分（评审意见：保底按行）。"""
+    """无空行的超长单行（代码块/长文本）也能被按行拆分。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = "line\n" * 12000  # 无空行、约 60KB
@@ -230,7 +230,7 @@ def test_split_hard_cut_utf8_boundary() -> None:
 
 
 def test_split_lossless_with_blank_lines() -> None:
-    """含空行分隔的内容拆分无损（评审 critical：分隔符不得被吞）。"""
+    """含空行分隔的内容拆分无损。"""
     from cnb_agentic_memory.memory import _split_body
 
     content = "a" * 29990 + "\n\n" + "b" * 20
@@ -273,7 +273,7 @@ def test_split_fuzz_lossless() -> None:
 
 
 async def test_search_network_error_suggests_fallback(client: CNBApiClient) -> None:
-    """知识库网络异常（非 404）同样触发 MemoryRuleError 降级提示（评审 warning）。"""
+    """知识库网络异常（非 404）同样触发 MemoryRuleError 降级提示。"""
     import httpx as httpx_mod
 
     memory = Memory(client)
@@ -286,7 +286,7 @@ async def test_search_network_error_suggests_fallback(client: CNBApiClient) -> N
 
 
 def test_title_suffix_fits_limit_for_large_split_count() -> None:
-    """分片数 >= 1000 时 (i/n) 后缀仍不破 60 字符上限（评审建议的回归守卫）。"""
+    """分片数 >= 1000 时 (i/n) 后缀仍不破 60 字符上限。"""
     from cnb_agentic_memory.memory import MAX_TITLE_CHARS, normalize_title
 
     for n in (999, 1000, 12345):
@@ -298,7 +298,7 @@ def test_title_suffix_fits_limit_for_large_split_count() -> None:
 async def test_write_single_label_failure_reports_number(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """主路径（单条）创建成功但补标签失败：MemoryRuleError 携带已落盘编号（评审意见：与拆分路径标准一致）。"""
+    """主路径（单条）创建成功但补标签失败：MemoryRuleError 携带已落盘编号。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
@@ -313,7 +313,7 @@ async def test_write_single_label_failure_reports_number(
 async def test_write_partial_failure_reports_created(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """多分片写入中途失败：MemoryRuleError 携带已创建分片编号（评审意见：孤儿 Issue 可循迹）。"""
+    """多分片写入中途失败：MemoryRuleError 携带已创建分片编号。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     long_content = ("段落。\n\n" + "x" * 20000) * 3
@@ -337,7 +337,7 @@ async def test_write_partial_failure_reports_created(
 async def test_write_category_prefix_idempotent(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """category 已带前缀不重复加；空 tag 被过滤（评审意见：防静默错误标签）。"""
+    """category 已带前缀不重复加；空 tag 被过滤。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     captured: dict[str, object] = {}
@@ -383,7 +383,7 @@ async def test_update_labels_only(client: CNBApiClient) -> None:
 async def test_update_nothing_raises(client: CNBApiClient) -> None:
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
-        # 未提供任何变更时直接拒绝，零网络调用（评审意见：空变更前置）。
+        # 未提供任何变更时直接拒绝，零网络调用。
         # 注意：断言必须在 mock 上下文内，call_count 才反映真实调用
         with pytest.raises(MemoryRuleError, match="未指定任何变更"):
             await memory.update(5)
@@ -392,7 +392,7 @@ async def test_update_nothing_raises(client: CNBApiClient) -> None:
 
 
 async def test_update_title_verified(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """title 变更同样回读校验（评审意见：与 write 路径标准一致）。"""
+    """title 变更同样回读校验。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
@@ -405,7 +405,7 @@ async def test_update_title_verified(client: CNBApiClient, monkeypatch: pytest.M
 
 
 async def test_update_title_and_tags_same_call(client: CNBApiClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """title/content 与 tags 同次调用都生效（评审意见：分支不再吞标签更新）。"""
+    """title/content 与 tags 同次调用都生效。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:

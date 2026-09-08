@@ -13,7 +13,7 @@ import sys
 def main() -> None:
     """MCP Server 启动入口（pyproject scripts 指向此处）。"""
     try:
-        # 函数内 import 属有意为之（可选依赖延迟加载，#89 唯一保留点）：
+        # 函数内 import 属有意为之（可选依赖延迟加载，全项目唯一保留点）：
         # mcp_server 顶层即导入 mcp 包，提前会吞掉「未装 extra」的指引时机
         from .mcp_server import main as mcp_main
     except ImportError as err:

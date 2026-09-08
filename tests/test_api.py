@@ -205,7 +205,7 @@ def test_non_positive_timeout_falls_back(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 async def test_non_json_2xx_raises_api_error(client: CNBApiClient) -> None:
-    """2xx 但响应非 JSON（网关异常页等）→ ApiError 保留原文（评审意见：不掩盖真实响应）。"""
+    """2xx 但响应非 JSON（网关异常页等）→ ApiError 保留原文。"""
     with respx.mock(base_url=BASE) as mock:
         mock.get("/group/repo/-/issues/1").respond(200, text="<html>Bad Gateway Page</html>")
         with pytest.raises(ApiError) as exc_info:

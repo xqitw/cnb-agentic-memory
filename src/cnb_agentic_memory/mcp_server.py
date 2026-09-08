@@ -33,7 +33,7 @@ from .memory import Memory, MemoryRuleError, SearchResult, WriteResult
 _DIST_NAME = "cnb-agentic-memory"  # PyPI 发行名（pyproject [project].name 同源）
 
 # --require-headers 开启后，HTTP 模式下凭据头不齐的请求在工具入口即拒绝，
-# 不再回落服务端环境变量凭据（#83 建议第 2 条：杜绝共享部署下的匿名调用）。
+# 不再回落服务端环境变量凭据（杜绝共享部署下的匿名调用）。
 # stdio 下无请求头是常态，开关不生效（否则自断）；env 值语义 1/true/yes/on 开。
 _REQUIRE_HEADERS_TRUTHY = frozenset({"1", "true", "yes", "on"})
 
@@ -45,7 +45,7 @@ _require_headers: bool = False
 # import 期一次性求解可能落后且零告警）
 _require_headers_explicit: bool = False
 
-# 共享客户端池：MCP 工具层专用（#83 建议第 5 条），按配置键复用连接池
+# 共享客户端池：MCP 工具层专用，按配置键复用连接池
 _client_pool = SharedClientPool()
 
 
@@ -131,14 +131,14 @@ async def _client(ctx: Context | None):
     MCP 框架对标注 Context 的参数自动注入请求上下文（不进入工具 Schema）：
     sse/streamable-http 下 ctx.headers 为该次 HTTP 请求头；stdio 下 ctx 仍被
     无条件注入（恒非 None）但 headers 为 None——故凭据校验以「有无请求头」
-    判传输，不能用 ctx is not None（复审阻塞项：会误杀 stdio 全部工具）。
+    判传输，不能用 ctx is not None（会误杀 stdio 全部工具）。
 
     --require-headers 开启时（HTTP 共享部署强制多用户隔离），凭据头不齐的
     请求直接拒绝，不回落服务端环境变量凭据——杜绝匿名调用间接使用
     CNB_AGENTIC_MEMORY_TOKEN。stdio 下开关不生效（无请求头是常态）。
 
-    #83 建议第 5 条：客户端来自共享池（按 token/repo/base_url/timeout 键
-    复用连接池，免每请求 TLS 握手）；async with 退出时 release 引用——
+    客户端来自共享池（按 token/repo/base_url/timeout 键复用连接池，
+    免每请求 TLS 握手）；async with 退出时 release 引用——
     引用归零不关闭（条目保活复用），关闭统一走显式 aclose()（并发
     关闭语义见 api.SharedClientPool）。
     """
@@ -168,7 +168,7 @@ def _tool_guard(fn):
     """工具统一错误出口：MemoryRuleError 转为 {"error": ...} JSON 结果文本。
 
     不加此出口，MemoryRuleError 穿透无捕获的工具被框架包成笼统的
-    "Error executing tool ..."（复审阻塞项）：调用方拿不到修复指引，
+    "Error executing tool ..."：调用方拿不到修复指引，
     且每次匿名探测都打 ERROR 级故障栈。--require-headers 的拒绝
     （凭据头不齐）是可预期的业务拒绝，与 memory_write 既有错误形状
     同源，客户端收到后自行决策补凭据头重试。
@@ -420,7 +420,7 @@ def validate_listen_host(value: str) -> str:
     监听地址与白名单条目是两种语义：前者要的是整体合法的
     地址（域名 / IPv4 / IPv6 / [IPv6]），不允许 host:port 合并形态——端口由
     --port 单独指定，合并形态会被 uvicorn 原样透传 getaddrinfo 失败、启动
-    即崩；按监听地址语义独立判别（复审阻塞项）：
+    即崩；按监听地址语义独立判别：
 
     1. 先 `ipaddress.ip_address()` 判裸 IP（含 `::1`、`0.0.0.0`、`::`）——
        判别顺序必须先于拆分，否则 `::1` 会被 rpartition 误拆成 `::` + `1`；
@@ -447,7 +447,7 @@ def validate_listen_host(value: str) -> str:
             raise ValueError("方括号后只允许跟一个数字端口（形如 [::1]:8000）")
         if len(tail) > 1:
             # [IPv6]:port 的端口段不静默丢弃：监听端口由 --port 指定，静默改用
-            # 别的端口会让「服务起在意外地址」且 env 通道无告警（复审 warning）
+            # 别的端口会让「服务起在意外地址」且 env 通道无告警
             raise ValueError(f"方括号形态不接受端口号（{stripped!r}），端口请用 --port 指定")
         candidate = inner
         if not candidate:
@@ -477,8 +477,8 @@ def parse_host(value: str | None) -> str:
 
     空串透传 uvicorn 会绑定全部网卡（等效 0.0.0.0），却绕过通配安全提醒，
     故与 parse_transport/parse_port 同口径清洗。host:port 合并形态（把端口
-    并进 host 的常见敲错）按监听地址语义拒绝，不复用白名单归一化（复审
-    阻塞项：normalize 判其合法，CLI 不报错但 uvicorn 启动即崩，env 通道
+    并进 host 的常见敲错）按监听地址语义拒绝，不复用白名单归一化（
+    normalize 判其合法，CLI 不报错但 uvicorn 启动即崩，env 通道
     还会把剥壳基名混入白名单）。环境变量兜底走 parse_host_env，告警回落
     不崩启动。
     """
@@ -488,7 +488,7 @@ def parse_host(value: str | None) -> str:
         return DEFAULT_HOST
     try:
         # 取校验返回值而非原值：[IPv6]/[IPv6]:port 剥壳为裸地址，带壳原值
-        # 直传 uvicorn 会被当作主机名 sock.bind 即崩（复审致命项）
+        # 直传 uvicorn 会被当作主机名 sock.bind 即崩（防御性：项）
         return validate_listen_host(stripped)
     except ValueError as err:
         raise argparse.ArgumentTypeError(f"监听地址无法解析：{stripped!r}（{err}）") from None
@@ -498,14 +498,14 @@ def parse_host_env(value: str | None) -> str:
     """环境变量 MCP_HOST 兜底解析：畸形值 stderr 告警回落 127.0.0.1，不崩启动。
 
     env default 不经 argparse type 校验，畸形值若不清洗会穿透到 mcp.run
-    裸 traceback 崩启动（复审阻塞项）；CLI 显式传错则直接报错退出。
+    裸 traceback 崩启动；CLI 显式传错则直接报错退出。
     """
     stripped = (value or "").strip()
     if not stripped:
         # 空值是「未指定」语义：回落默认地址（test_main_empty_host_env_falls_back 锚定），不告警
         return DEFAULT_HOST
     try:
-        # 取校验返回值而非原值：剥壳语义与 CLI 通道同口径（复审致命项）
+        # 取校验返回值而非原值：剥壳语义与 CLI 通道同口径
         return validate_listen_host(stripped)
     except ValueError as err:
         print(
@@ -519,7 +519,7 @@ def whitelist_host_base(host: str) -> str:
     """把监听地址转为白名单「Host 基名」：裸 IPv6 裹方括号（RFC 3986），其余原样。
 
     仅服务 --host 的白名单生成这一个职责；原 --allowed-host 条目的多形态
-    归一化（host:port / host:* 剥壳等）随参数裁剪一并移除（#85）。
+    归一化（host:port / host:* 剥壳等）随参数裁剪一并移除。
     调用前 host 已过 validate_listen_host，此处只做形态转换，不校验。
     """
     try:
@@ -673,11 +673,11 @@ def main(argv: list[str] | None = None) -> None:
 
     configure_require_headers(args.require_headers)
 
-    # #85 裁剪 --allowed-host 后的废弃提示：存量部署的该 env 会被无声吞掉，
+    # --allowed-host 已裁剪的废弃提示：存量部署的该 env 会被无声吞掉，
     # 反代保留真实 Host 的场景升级后全量 421 且无告警——显式提醒迁移路径
     if env("MCP_ALLOWED_HOSTS"):
         print(
-            "警告：CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS 已随 --allowed-host 移除（#85），"
+            "警告：CNB_AGENTIC_MEMORY_MCP_ALLOWED_HOSTS 已随 --allowed-host 移除，"
             "本次启动被忽略；反代部署请改写 Host/Origin（如 proxy_set_header Host localhost; "
             'proxy_set_header Origin "";）或由代理层完成白名单校验',
             file=sys.stderr,
@@ -699,8 +699,8 @@ def main(argv: list[str] | None = None) -> None:
         # 框架仅对 localhost 自动开 DNS rebinding 防护，其他监听地址显式透传
         # TransportSecuritySettings 保持防护常开。白名单固定为 localhost 族 +
         # 监听地址直连形式，不提供扩展入口：对外部署一律置于反代之后，访问
-        # 控制与 Host 白名单属代理层职责（扩展白名单入口已按 #85 裁剪——其
-        # 输入形态 × 匹配语义矩阵的维护成本远超防御价值，见 PR !84 八轮复审）。
+        # 控制与 Host 白名单属代理层职责（扩展白名单入口已裁剪——其
+        # 输入形态 × 匹配语义矩阵的维护成本远超防御价值）。
         # 白名单生成实现在 build_transport_security（与对外部署适配层共用）。
         security = build_transport_security(args.host)
 

@@ -199,7 +199,7 @@ def test_api_error_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_missing_repo_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
-    """配置缺失：退出码 2 + 可操作的友好提示（评审反馈：令牌缺失须有提示）。"""
+    """配置缺失：退出码 2 + 可操作的友好提示。"""
     monkeypatch.delenv("CNB_AGENTIC_MEMORY_REPO", raising=False)
     monkeypatch.delenv("CNB_AGENTIC_MEMORY_TOKEN", raising=False)
     result = runner.invoke(app, ["get", "1"])
@@ -221,7 +221,7 @@ def test_list_state_bogus_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_write_split_outputs_all_parts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """超长拆分时 CLI 输出全部分片编号（评审：循迹不漏片）。"""
+    """超长拆分时 CLI 输出全部分片编号。"""
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
@@ -313,7 +313,7 @@ def test_list_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_keyword_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    """keyword 命令：透传 keyword 过滤，limit 钳制，默认仅查 open（复审：CLI 层直接用例）。"""
+    """keyword 命令：透传 keyword 过滤，limit 钳制，默认仅查 open。"""
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
