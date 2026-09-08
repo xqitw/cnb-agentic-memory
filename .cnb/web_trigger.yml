@@ -1,0 +1,25 @@
+# web 触发按钮声明：web 页面「一键部署」按钮 -> 触发 .cnb.yml 的 web_trigger_deploy 流水线
+# 结构对齐 xqitw/portfolio；inputs 即流水线 env（DEPLOY_NAME / DEPLOY_ENV）
+branch:
+  - buttons:
+      - name: 一键部署
+        description: 一键部署到腾讯云 EdgeOne Pages（streamable-http 承载 MCP Server）
+        event: web_trigger_deploy
+        inputs:
+          DEPLOY_NAME:
+            name: 项目名称
+            description: 对应EdgeOne中的项目名称
+            default: "cnb-agentic-memory"
+            required: true
+            type: input
+          DEPLOY_ENV:
+            name: 部署环境
+            description: 生产环境：更新至用户访问的线上网站，立即生效；预览环境：在隔离环境中验证更改，不影响正式数据
+            required: true
+            type: select
+            default: production
+            options:
+              - name: 生产环境
+                value: production
+              - name: 预览环境
+                value: preview

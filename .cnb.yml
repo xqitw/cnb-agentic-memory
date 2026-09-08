@@ -135,7 +135,8 @@ include:
 
 # 复用片段:web 触发部署到腾讯云 EdgeOne Pages(结构对齐 xqitw/portfolio 的部署流水线)
 # 密钥来自 xqitw/api-key 的 env.yml(EDGE_ONE_PAGES_API_KEY),不落库;
-# EO 构建产物只需 cloud-functions/ + edgeone.json + 文档,git 痕迹与 CI 配置不入包
+# 按钮声明见 .cnb/web_trigger.yml(inputs 与此处 env 同名传递)
+# EO 构建产物只需 cloud-functions/ + edgeone.json,其余全部清出工作区不入包
 .edgeone-deploy: &edgeone-deploy
   services:
     - docker
@@ -148,10 +149,9 @@ include:
     - name: 部署到腾讯云 EdgeOne Pages
       image: node:24
       script: |
-        rm -rf .git/
-        rm -rf .cnb/
-        rm -rf README.md
-        rm -rf .cnb.yml
+        # 只保留 EO 需要的目录与配置,其余(src/tests/docs 等)全部删除
+        find /workspace -mindepth 1 -maxdepth 1 \
+          ! -name cloud-functions ! -name edgeone.json -exec rm -rf {} +
         npx edgeone pages deploy /workspace -n ${DEPLOY_NAME} -t ${EDGE_ONE_PAGES_API_KEY} -e ${DEPLOY_ENV}
 
 main:

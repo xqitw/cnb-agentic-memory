@@ -20,7 +20,9 @@
    | `CNB_AGENTIC_MEMORY_REQUIRE_HEADERS` | 共享部署必填 | 置 `1` 强制凭据头：请求须带 `X-CNB-Token`/`X-CNB-Repo`，防匿名调用间接使用服务端凭据 |
    | `CNB_AGENTIC_MEMORY_MCP_PUBLIC_HOST` | 生产必填 | 对外域名基名（如 `my-project.edgeone.app`），作 DNS rebinding 防护白名单；未设置时防护不启用并打启动警告，仅限测试部署 |
 
-3. 部署：`npx edgeone pages deploy`
+3. 部署，二选一：
+   - **web 触发**（推荐）：CNB web 页面「一键部署」按钮（声明见 `.cnb/web_trigger.yml`），支持选择生产/预览环境与项目名
+   - 本地：`npx edgeone pages deploy`
 4. MCP 客户端连接 `https://<project>.edgeone.app/mcp`（streamable-http 形态）
 
 ## 依赖说明
