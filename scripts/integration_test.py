@@ -110,7 +110,7 @@ async def test_search_semantic(memory: Memory, marker: str) -> None:
 async def test_pool_isolation(repo: str) -> None:
     """连接池复用与无效凭据隔离。"""
     section("连接池")
-    client = CNBApiClient(token=os.environ["CNB_AGENTIC_MEMORY_TOKEN"], repo=repo)
+    client = CNBApiClient(token=os.environ["CNB_AGENTIC_MEMORY_IT_TOKEN"], repo=repo)
     memory = Memory(client)
     issues = await memory.list_recent(limit=1)  # 真实请求走一次
     issues2 = await memory.list_recent(limit=1)
@@ -124,10 +124,20 @@ async def test_pool_isolation(repo: str) -> None:
         record("无效凭据 401", "401" in str(err) or "Unauthorized" in str(err), str(err)[:60])
 
 
+def child_env() -> dict[str, str]:
+    """子进程环境：测试凭据显式覆盖继承的正式库配置（cli/mcp 子进程只认
+    CNB_AGENTIC_MEMORY_*，不覆盖则回落 shell 继承的正式库）。"""
+    return {
+        **os.environ,
+        "CNB_AGENTIC_MEMORY_TOKEN": os.environ["CNB_AGENTIC_MEMORY_IT_TOKEN"],
+        "CNB_AGENTIC_MEMORY_REPO": os.environ["CNB_AGENTIC_MEMORY_IT_REPO"],
+    }
+
+
 def test_cli(number: int) -> None:
     """CLI 真实进程。"""
     section("CLI")
-    env = {**os.environ}
+    env = child_env()
     r = subprocess.run(
         [sys.executable, "-m", "cnb_agentic_memory.cli", "get", str(number)],
         capture_output=True,
@@ -157,6 +167,7 @@ def test_mcp_stdio(number: int) -> None:
     stderr_log = tempfile.TemporaryFile(mode="w+")
     proc = subprocess.Popen(
         [sys.executable, "-m", "cnb_agentic_memory.mcp_main"],
+        env=child_env(),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=stderr_log,
@@ -301,14 +312,33 @@ def test_mcp_http(number: int) -> None:
 
 
 async def main() -> None:
-    token = os.environ.get("CNB_AGENTIC_MEMORY_TOKEN")
-    repo = os.environ.get("CNB_AGENTIC_MEMORY_REPO")
+    # 凭据走独立命名空间 CNB_AGENTIC_MEMORY_IT_*：shell 里继承的正式库配置
+    # （CNB_AGENTIC_MEMORY_*）对本脚本一律无效，从根上切断误写正式库的通道
+    token = os.environ.get("CNB_AGENTIC_MEMORY_IT_TOKEN")
+    repo = os.environ.get("CNB_AGENTIC_MEMORY_IT_REPO")
     if not token or not repo:
-        sys.exit("缺少 CNB_AGENTIC_MEMORY_TOKEN / CNB_AGENTIC_MEMORY_REPO")
+        sys.exit("缺少 CNB_AGENTIC_MEMORY_IT_TOKEN / CNB_AGENTIC_MEMORY_IT_REPO（测试专用凭据）")
     print(f"集成测试目标仓库: {repo}（须为测试专用仓库）")
     print(f"Python: {sys.version.split()[0]}")
 
     client = CNBApiClient(token=token, repo=repo)
+
+    # 硬门禁（防误写正式记忆库）：凭据隔离为主（IT 独立变量），盘点为辅——
+    # 1) 仓库中若存在非 it-* 前缀的既有数据，说明不是专用测试仓库，拒绝运行
+    existing = await client.list_issues(page=1, page_size=50)
+    foreign = [i.number for i in existing if not i.title.startswith("it-")]
+    if foreign:
+        sys.exit(f"目标仓库存在非测试数据（issue {foreign[:5]}...），疑似正式记忆库，拒绝运行")
+    # 2) 非交互环境（CI/管道）必须显式声明 CNB_AGENTIC_MEMORY_IT_CONFIRM=yes；
+    #    交互环境键入 yes 确认。双重确认防 shell 继承的正式库 env 混入
+    if os.environ.get("CNB_AGENTIC_MEMORY_IT_CONFIRM") != "yes":
+        try:
+            answer = input(f"将向 {repo} 写入测试数据，确认是测试专用仓库？(yes/no) ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() != "yes":
+            sys.exit("未确认，退出")
+
     memory = Memory(client)
 
     # 段级异常守护：单段崩溃只记 FAIL，后续段落照常执行（契约：单段失败不中断）。
@@ -325,7 +355,7 @@ async def main() -> None:
 
     ctx = await guard("Memory 核心链路", test_memory_core, memory)
     await guard("语义检索", test_search_semantic, memory, str(ctx.get("marker", "")))
-    await guard("连接池", test_pool_isolation, repo)
+    await guard("连接池", test_pool_isolation, token, repo)
     n1 = int(ctx.get("n1", 1))
     await guard("CLI", test_cli, n1)
     await guard("MCP stdio", test_mcp_stdio, n1)
