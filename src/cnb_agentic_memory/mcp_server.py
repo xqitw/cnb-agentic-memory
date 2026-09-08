@@ -523,6 +523,22 @@ def whitelist_host_base(host: str) -> str:
         return host
 
 
+def configure_require_headers(cli_flag: bool | None = None) -> None:
+    """require-headers 开关的统一激活入口（写路径唯一，模块级 _require_headers）。
+
+    CLI 显式传参优先；未传时兜底读 CNB_AGENTIC_MEMORY_REQUIRE_HEADERS
+    （truthy 语义 1/true/yes/on）。main() 之外还存在不经 CLI 的部署形态：
+    Serverless 适配层直接 import mcp 单例（#91），env 兜底仅作用于 argparse
+    default，不经过 main() 则开关恒 False（幽明 #91 实测）——此类入口必须
+    显式调用本函数激活。
+    """
+    global _require_headers
+    if cli_flag is not None:
+        _require_headers = cli_flag
+    else:
+        _require_headers = (env("REQUIRE_HEADERS") or "").strip().lower() in _REQUIRE_HEADERS_TRUTHY
+
+
 def build_transport_security(
     host_base: str, *, origin_schemes: tuple[str, ...] = ("http",)
 ) -> TransportSecuritySettings:
@@ -633,8 +649,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    global _require_headers
-    _require_headers = args.require_headers
+    configure_require_headers(args.require_headers)
 
     # #85 裁剪 --allowed-host 后的废弃提示：存量部署的该 env 会被无声吞掉，
     # 反代保留真实 Host 的场景升级后全量 421 且无告警——显式提醒迁移路径

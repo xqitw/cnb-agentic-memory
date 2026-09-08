@@ -788,6 +788,32 @@ def test_build_transport_security_https_origins_for_edgeone() -> None:
     assert "https://proj.edgeone.app:*" in sec.allowed_origins
 
 
+def test_configure_require_headers_env_fallback_and_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """require-headers 统一激活入口：env 兜底与显式传参（#91 幽明阻塞项）。
+
+    Serverless 适配层不经 main() 直接 import mcp 单例，argparse default 的
+    env 兜底在该路径不生效（实测恒 False）——必须显式 configure_require_headers()。
+    """
+    from cnb_agentic_memory.mcp_server import configure_require_headers
+
+    monkeypatch.setattr(mcp_server, "_require_headers", False)  # 测试后还原
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "1")
+    configure_require_headers()
+    assert mcp_server._require_headers is True
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "off")
+    configure_require_headers()
+    assert mcp_server._require_headers is False
+
+    # 显式传参优先于 env（None=未传才走 env 兜底）
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "1")
+    configure_require_headers(False)
+    assert mcp_server._require_headers is False
+
+
 def test_build_transport_security_ipv6_base_bracketed() -> None:
     """裸 IPv6 基名内部统一裹方括号（复用 whitelist_host_base），调用方无需预处理。"""
     from cnb_agentic_memory.mcp_server import build_transport_security

@@ -20,7 +20,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from cnb_agentic_memory.api import env
-from cnb_agentic_memory.mcp_server import build_transport_security, mcp
+from cnb_agentic_memory.mcp_server import build_transport_security, configure_require_headers, mcp
+
+# require-headers 激活必须显式调用：适配层不经 main()，argparse default 的 env
+# 兜底在此路径不生效，开关恒 False（幽明 #91 实测）——语义与 CLI 完全同源
+configure_require_headers()
 
 _public_host = env("MCP_PUBLIC_HOST")
 if _public_host:
