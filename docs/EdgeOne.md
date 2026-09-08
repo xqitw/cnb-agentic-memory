@@ -15,7 +15,7 @@
 
    | 环境变量 | 必填 | 说明 |
    | --- | --- | --- |
-   | `CNB_AGENTIC_MEMORY_REQUIRE_HEADERS` | 共享部署必填 | 置 `1` 强制凭据头：请求须带 `X-CNB-Token`/`X-CNB-Repo`（凭据由调用方传递，服务端不持有），匿名请求在工具入口即拒绝 |
+   | `CNB_AGENTIC_MEMORY_REQUIRE_HEADERS` | 共享部署必填 | 置 `1` 强制凭据头：请求须带 `X-CNB-Token`/`X-CNB-Repo`（凭据由调用方传递），匿名请求在工具入口即拒绝。**服务端禁止配置 `CNB_AGENTIC_MEMORY_TOKEN`/`CNB_AGENTIC_MEMORY_REPO`**——服务端持凭据 + 漏配本开关时门禁形同虚设 |
 
    **Host/Origin 传输层校验在 EO 形态下不启用**（防护职责分层）：恶意 Host 在 EO 边缘即被拒（Host 是平台路由键，未绑定域名 418）；函数收到的 Host 被改写为平台内部源站域名（动态不可预知），SDK 白名单无法稳定配置且 SDK 无「只校验 Origin」粒度；匿名/跨源滥用的实质阻断由 `REQUIRE_HEADERS` 门禁承担（服务端零凭据，无凭据头请求无资产可碰）。
 

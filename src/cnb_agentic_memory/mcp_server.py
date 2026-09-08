@@ -40,6 +40,10 @@ _REQUIRE_HEADERS_TRUTHY = frozenset({"1", "true", "yes", "on"})
 # 运行时开关状态：main 解析 --require-headers 后设置；模块级变量而非工具参数——
 # 工具签名不得携带与调用语义无关的部署开关（会污染 MCP Schema）
 _require_headers: bool = False
+# CLI 显式传参标记：--require-headers 为解析期已定语义，请求期不再回落 env；
+# 未显式传参时由请求入口每请求读 env 兜底（锐鉴 #91 阻塞项：EO 冷启动 env
+# 注入时序不受控，import 期一次性求解可能落后且零告警）
+_require_headers_explicit: bool = False
 
 # 共享客户端池：MCP 工具层专用（#83 建议第 5 条），按配置键复用连接池
 _client_pool = SharedClientPool()
@@ -140,7 +144,8 @@ async def _client(ctx: Context | None):
     """
     headers = ctx.headers if ctx is not None else None
     overrides = resolve_overrides_from_headers(headers) if headers else {}
-    if _require_headers and headers is not None:
+    # 请求期惰性求解门禁（每请求读 env，EO 冷启动 env 时序兜底，锐鉴 #91）
+    if ensure_require_headers() and headers is not None:
         # 仅约束 HTTP 传输：stdio 无请求头是常态，不适用本开关
         if not overrides:
             raise MemoryRuleError(
@@ -523,20 +528,37 @@ def whitelist_host_base(host: str) -> str:
         return host
 
 
-def configure_require_headers(cli_flag: bool | None = None) -> None:
-    """require-headers 开关的统一激活入口（写路径唯一，模块级 _require_headers）。
+def configure_require_headers(cli_flag: bool | None = None) -> bool:
+    """require-headers 开关的统一激活入口（CLI 显式语义登记 + env 兜底求解）。
 
     CLI 显式传参优先；未传时兜底读 CNB_AGENTIC_MEMORY_REQUIRE_HEADERS
     （truthy 语义 1/true/yes/on）。main() 之外还存在不经 CLI 的部署形态：
     Serverless 适配层直接 import mcp 单例（#91），env 兜底仅作用于 argparse
     default，不经过 main() 则开关恒 False（幽明 #91 实测）——此类入口必须
-    显式调用本函数激活。
+    显式调用本函数激活。返回激活结果，供适配层做启动期告警。
+
+    注意：无参（env 兜底）路径在 EO 冷启动可能因 env 注入时序而滞后，请求期
+    语义以 ensure_require_headers 为准——本函数只登记 CLI 显式值与启动期快照。
     """
-    global _require_headers
+    global _require_headers, _require_headers_explicit
     if cli_flag is not None:
         _require_headers = cli_flag
+        _require_headers_explicit = True
     else:
         _require_headers = (env("REQUIRE_HEADERS") or "").strip().lower() in _REQUIRE_HEADERS_TRUTHY
+    return _require_headers
+
+
+def ensure_require_headers() -> bool:
+    """请求期门禁求解（_client 每次进入时调用）：CLI 显式传参优先，否则读 env。
+
+    每请求直接求解而非 import 期缓存——EO 冷启动/实例重建时 env 注入与模块
+    import 的时序不受本仓库控制（锐鉴 #91 阻塞项），一次性求解在 env 落后时
+    门禁恒 False 且零告警；os.environ.get 成本可忽略，无需缓存。
+    """
+    if _require_headers_explicit:
+        return _require_headers
+    return (env("REQUIRE_HEADERS") or "").strip().lower() in _REQUIRE_HEADERS_TRUTHY
 
 
 def build_transport_security(

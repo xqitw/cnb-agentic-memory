@@ -18,6 +18,7 @@ SDK 的 Host/Origin 传输层校验在 EO 形态下不启用，防护职责分�
 部署步骤与实测结论回填见 docs/EdgeOne.md。
 """
 
+import warnings
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -26,8 +27,16 @@ from fastapi.responses import JSONResponse
 from cnb_agentic_memory.mcp_server import configure_require_headers, mcp
 
 # require-headers 激活必须显式调用：适配层不经 main()，argparse default 的 env
-# 兜底在此路径不生效，开关恒 False（幽明 #91 实测）——语义与 CLI 完全同源
-configure_require_headers()
+# 兜底在此路径不生效，开关恒 False（幽明 #91 实测）——语义与 CLI 完全同源。
+# 启动告警落 EO 函数日志：门禁关闭时共享部署匿名可调全部工具（幽明 #91），
+# 漏配 env 不能零痕迹；请求期门禁由 ensure_require_headers 每请求惰性求解
+if not configure_require_headers():
+    warnings.warn(
+        "CNB_AGENTIC_MEMORY_REQUIRE_HEADERS 未启用（当前值非 1/true/yes/on）："
+        "共享部署必须配置为 1 强制凭据头，否则匿名请求可调用全部记忆工具",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 _mcp_asgi = mcp.streamable_http_app(
     streamable_http_path="/",

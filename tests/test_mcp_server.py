@@ -799,19 +799,47 @@ def test_configure_require_headers_env_fallback_and_explicit(
     from cnb_agentic_memory.mcp_server import configure_require_headers
 
     monkeypatch.setattr(mcp_server, "_require_headers", False)  # 测试后还原
+    monkeypatch.setattr(mcp_server, "_require_headers_explicit", False)
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "1")
-    configure_require_headers()
-    assert mcp_server._require_headers is True
+    assert configure_require_headers() is True
 
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "off")
-    configure_require_headers()
-    assert mcp_server._require_headers is False
+    assert configure_require_headers() is False
 
     # 显式传参优先于 env（None=未传才走 env 兜底）
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "1")
-    configure_require_headers(False)
-    assert mcp_server._require_headers is False
+    assert configure_require_headers(False) is False
+    assert mcp_server._require_headers_explicit is True
+
+
+def test_ensure_require_headers_resolves_per_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """请求期门禁惰性求解：EO 冷启动 env 注入时序兜底（锐鉴 #91 阻塞项）。
+
+    import 期 env 未注入时 configure 求解为 False，首个请求期重读 env 须
+    翻正；CLI 显式传参语义最高，不随 env 漂移。
+    """
+    from cnb_agentic_memory.mcp_server import ensure_require_headers
+
+    monkeypatch.setattr(mcp_server, "_require_headers", False)  # 测试后还原
+    monkeypatch.setattr(mcp_server, "_require_headers_explicit", False)
+
+    # 模拟 import 期 env 落后：未求解，ensure 每请求读 env
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", raising=False)
+    assert ensure_require_headers() is False
+    # env 注入后（EO 冷启动完成），下一请求即翻正
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "1")
+    assert ensure_require_headers() is True
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "off")
+    assert ensure_require_headers() is False
+
+    # CLI 显式传参固定语义：env 怎么变都不影响
+    mcp_server._require_headers = True
+    mcp_server._require_headers_explicit = True
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REQUIRE_HEADERS", "off")
+    assert ensure_require_headers() is True
 
 
 def test_build_transport_security_ipv6_base_bracketed() -> None:
