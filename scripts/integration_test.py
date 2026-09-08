@@ -155,7 +155,9 @@ def test_cli(number: int) -> None:
         [sys.executable, "-m", "cnb_agentic_memory.cli", "get", "999999"],
         capture_output=True,
         text=True,
-        env={k: v for k, v in env.items() if not k.startswith("CNB_AGENTIC_MEMORY")},
+        env={
+            k: v for k, v in env.items() if k not in ("CNB_AGENTIC_MEMORY_TOKEN", "CNB_AGENTIC_MEMORY_REPO")
+        },
         timeout=60,
     )
     record("cli 配置缺失 exit 2", r2.returncode == 2, f"exit={r2.returncode}")
@@ -210,6 +212,7 @@ def test_mcp_stdio(number: int) -> None:
         record("stdio tools/call memory_get", False, f"{err}"[:60] + " | stderr: " + stderr_log.read()[-80:])
     finally:
         proc.kill()
+        stderr_log.close()
 
 
 def _rpc_body(resp: httpx.Response) -> dict:
@@ -226,6 +229,7 @@ def test_mcp_http(number: int) -> None:
     """MCP streamable-http + --require-headers：门禁与放行（CLI 形态有状态 session）。"""
     section("MCP streamable-http")
     port = 8123
+    stderr_log = tempfile.TemporaryFile(mode="w+")
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -237,12 +241,14 @@ def test_mcp_http(number: int) -> None:
             str(port),
             "--require-headers",
         ],
+        env=child_env(),
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=stderr_log,
     )
     try:
         base = f"http://127.0.0.1:{port}/mcp"
         headers = {"accept": "application/json, text/event-stream", "content-type": "application/json"}
+        ready = False
         for _ in range(50):
             try:
                 # POST ping 探测（GET 在有状态模式会挂起 SSE 长连接）：400=session
@@ -250,9 +256,14 @@ def test_mcp_http(number: int) -> None:
                 if httpx.post(
                     base, json={"jsonrpc": "2.0", "method": "ping", "id": 0}, headers=headers, timeout=2
                 ).status_code in (200, 400):
+                    ready = True
                     break
             except Exception:  # noqa: BLE001
                 time.sleep(0.2)
+        if not ready:
+            stderr_log.seek(0)
+            record("MCP HTTP 服务就绪", False, stderr_log.read()[-150:])
+            return
         headers = {"accept": "application/json, text/event-stream", "content-type": "application/json"}
 
         def session_of(extra: dict[str, str]) -> str:
@@ -325,8 +336,12 @@ async def main() -> None:
 
     # 硬门禁（防误写正式记忆库）：凭据隔离为主（IT 独立变量），盘点为辅——
     # 1) 仓库中若存在非 it-* 前缀的既有数据，说明不是专用测试仓库，拒绝运行
-    existing = await client.list_issues(page=1, page_size=50)
-    foreign = [i.number for i in existing if not i.title.startswith("it-")]
+    foreign: list[str] = []
+    for page in range(1, 21):  # 翻页穷尽（上限 20 页防御性截断）
+        batch = await client.list_issues(page=page, page_size=100)
+        if not batch:
+            break
+        foreign += [str(i.number) for i in batch if not i.title.startswith("it-")]
     if foreign:
         sys.exit(f"目标仓库存在非测试数据（issue {foreign[:5]}...），疑似正式记忆库，拒绝运行")
     # 2) 非交互环境（CI/管道）必须显式声明 CNB_AGENTIC_MEMORY_IT_CONFIRM=yes；
@@ -344,7 +359,7 @@ async def main() -> None:
     # 段级异常守护：单段崩溃只记 FAIL，后续段落照常执行（契约：单段失败不中断）。
     # 同步段统一 to_thread 调度：直接在事件循环上跑同步阻塞函数（subprocess.run
     # 至多 120s）会冻结整个循环，语义检索等异步段的时延观测随之失真
-    async def guard(name: str, fn, *args) -> object:
+    async def guard(name: str, fn, *args) -> dict[str, object]:
         try:
             if asyncio.iscoroutinefunction(fn):
                 return await fn(*args)
@@ -356,7 +371,8 @@ async def main() -> None:
     ctx = await guard("Memory 核心链路", test_memory_core, memory)
     await guard("语义检索", test_search_semantic, memory, str(ctx.get("marker", "")))
     await guard("连接池", test_pool_isolation, token, repo)
-    n1 = int(ctx.get("n1", 1))
+    n1_raw = ctx.get("n1", 1)
+    n1 = int(n1_raw) if isinstance(n1_raw, int) else 1
     await guard("CLI", test_cli, n1)
     await guard("MCP stdio", test_mcp_stdio, n1)
     await guard("MCP streamable-http", test_mcp_http, n1)
