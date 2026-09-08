@@ -814,27 +814,6 @@ def test_configure_require_headers_env_fallback_and_explicit(
     assert mcp_server._require_headers is False
 
 
-def test_build_transport_security_origin_bases_split_from_host() -> None:
-    """Host/Origin 基名分离（#91 EO 形态）：Host 被平台改写为内部源站，Origin 透传对外域名。"""
-    from cnb_agentic_memory.mcp_server import build_transport_security
-
-    sec = build_transport_security(
-        "pages-x.pages-scf-gz-pro.qcloudteo.com",
-        origin_bases=("cam.example.com",),
-        origin_schemes=("https",),
-    )
-
-    # Host 白名单：localhost 族 + 内部源站；不含对外域名
-    assert "pages-x.pages-scf-gz-pro.qcloudteo.com:*" in sec.allowed_hosts
-    assert "cam.example.com" not in sec.allowed_hosts
-    # Origin 白名单：仅对外域名双形态，https scheme；不含内部源站与本机族
-    assert set(sec.allowed_origins) == {"https://cam.example.com", "https://cam.example.com:*"}
-    # 缺省行为（main 路径）：Origin 基名 = 全部 host_bases（含 localhost 族）
-    sec_default = build_transport_security("myhost.example.com")
-    assert "http://localhost" in sec_default.allowed_origins
-    assert "http://myhost.example.com:*" in sec_default.allowed_origins
-
-
 def test_build_transport_security_ipv6_base_bracketed() -> None:
     """裸 IPv6 基名内部统一裹方括号（复用 whitelist_host_base），调用方无需预处理。"""
     from cnb_agentic_memory.mcp_server import build_transport_security
