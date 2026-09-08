@@ -4,7 +4,7 @@
 
 ## 开发环境
 
-- Python 3.11+
+- Python 3.10+（3.10 为 EdgeOne Pages Python 运行时版本，#91 部署要求）
 - [uv](https://docs.astral.sh/uv/) 包管理（推荐）
 
 ## 开发流程
