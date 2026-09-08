@@ -135,14 +135,14 @@ include:
 
 # 复用片段:web 触发部署到腾讯云 EdgeOne Pages(结构对齐 xqitw/portfolio 的部署流水线)
 # 密钥来自 xqitw/api-key 的 env.yml(EDGE_ONE_PAGES_API_KEY),不落库;
-# 按钮声明见 .cnb/web_trigger.yml(inputs 与此处 env 同名传递)
-# EO 构建产物只需 cloud-functions/ + edgeone.json,其余全部清出工作区不入包
+# 按钮声明见 .cnb/web_trigger.yml
+# DEPLOY_NAME/DEPLOY_ENV 不在此硬编码(幽明 #91 暗缝:与按钮 inputs 同名双写,
+# 覆盖优先级官方未明载,选「预览环境」可能被静默覆盖为生产)——以按钮 inputs 为
+# 唯一来源,其 default 已兜底项目名与生产环境
+# 注意:事件挂 "*" 测试期全分支可触发生产部署(与 portfolio 同款),稳定后建议收紧 main
 .edgeone-deploy: &edgeone-deploy
   services:
     - docker
-  env:
-    DEPLOY_ENV: "production"
-    DEPLOY_NAME: "cnb-agentic-memory"
   imports:
     - https://cnb.cool/xqitw/api-key/-/blob/main/env.yml
   stages:
