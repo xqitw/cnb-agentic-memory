@@ -5,12 +5,17 @@ https://<project>.edgeone.app/mcp。Serverless 短执行模型（上限 120s）�
 长连接与有状态 session，故 json_response + stateless_http 双开。
 
 环境变量（EO 控制台配置，值须 ≤500 字节）：
-- CNB_AGENTIC_MEMORY_TOKEN / CNB_AGENTIC_MEMORY_REPO：服务端兜底凭据
-- CNB_AGENTIC_MEMORY_REQUIRE_HEADERS=1：强制凭据头（多用户共享部署防匿名调用）
-- CNB_AGENTIC_MEMORY_MCP_PUBLIC_HOST：对外域名基名（如 my-project.edgeone.app），
-  作为 DNS rebinding 防护白名单基名；未设置时防护不启用并打警告（仅限测试部署）
+- CNB_AGENTIC_MEMORY_REQUIRE_HEADERS=1：强制凭据头（多用户共享部署防匿名调用，
+  凭据一律由调用方经 X-CNB-Token / X-CNB-Repo 头传递，服务端不持有）
+- CNB_AGENTIC_MEMORY_MCP_PUBLIC_HOST：对外域名基名（如 cam.xqitw.cool），作
+  Origin 白名单
+- CNB_AGENTIC_MEMORY_MCP_INTERNAL_HOST：EO 内部源站域名（实测 Host 头被改写为
+  pages-*.qcloudteo.com 形态，#91），作 Host 白名单；平台侧变更该域名时须同步
+  更新（表现为请求 421）
 
-部署步骤与实测结论回填见 docs/EdgeOne.md。
+两 HOST 变量缺任一则防护不启用并打警告（仅限测试部署）；EO 边缘按 Host 路由，
+恶意 Host 在平台层已被拒（418），函数内 Host 校验锁内部源站、Origin 校验防
+浏览器跨源。部署步骤与实测结论回填见 docs/EdgeOne.md。
 """
 
 import warnings
@@ -27,16 +32,21 @@ from cnb_agentic_memory.mcp_server import build_transport_security, configure_re
 configure_require_headers()
 
 _public_host = env("MCP_PUBLIC_HOST")
-if _public_host:
-    # EO 为 HTTPS 平台，浏览器/客户端 Origin 序列化为 https，白名单 scheme 取 https
-    _transport_security = build_transport_security(_public_host, origin_schemes=("https",))
+_internal_host = env("MCP_INTERNAL_HOST")
+if _public_host and _internal_host:
+    # EO 为 HTTPS 平台，浏览器/客户端 Origin 序列化为 https，白名单 scheme 取 https；
+    # Host 与 Origin 基名分离（#91 实测：Host 被改写为内部源站，Origin 原样透传）
+    _transport_security = build_transport_security(
+        _internal_host, origin_bases=(_public_host,), origin_schemes=("https",)
+    )
 else:
-    # 测试部署兜底：未设 PUBLIC_HOST 时防护不启用（框架不校验 Host/Origin）。
-    # 生产部署必须配置该变量，否则对外端点暴露于 DNS rebinding 面——
-    # warnings.warn 收口（默认打印一次至 stderr，EO 采为函数日志），不用裸 print
+    # 测试部署兜底：两 HOST 变量缺任一时防护不启用（框架不校验 Host/Origin）。
+    # 生产部署必须配置，否则对外端点暴露于浏览器跨源面——warnings.warn 收口
+    # （默认打印一次至 stderr，EO 采为函数日志），不用裸 print
     warnings.warn(
-        "未设置 CNB_AGENTIC_MEMORY_MCP_PUBLIC_HOST，DNS rebinding 防护未启用；"
-        "生产部署必须配置该环境变量（值为对外域名，如 my-project.edgeone.app）",
+        "未配齐 CNB_AGENTIC_MEMORY_MCP_PUBLIC_HOST / CNB_AGENTIC_MEMORY_MCP_INTERNAL_HOST，"
+        "Host/Origin 校验未启用；生产部署必须配置（PUBLIC_HOST=对外域名，"
+        "INTERNAL_HOST=EO 内部源站域名，见 docs/EdgeOne.md）",
         RuntimeWarning,
         stacklevel=2,
     )
@@ -51,10 +61,10 @@ _mcp_asgi = mcp.streamable_http_app(
     json_response=True,
     stateless_http=True,
     transport_security=_transport_security,
-    # transport_security=None 分支（未设 PUBLIC_HOST）时 host 必须传非 localhost 值：
+    # transport_security=None 分支（两 HOST 变量缺任一）时 host 必须传非 localhost 值：
     # 框架对 localhost 族默认自动开 DNS rebinding 防护（allowed_hosts 仅本机族），
-    # EO 转发的对外域名 Host 必被 421；传非 localhost 使框架不做任何 Host/Origin 校验
-    host=_public_host or "edgeone-pages",
+    # EO 转发的内部源站 Host 必被 421；传非 localhost 使框架不做任何 Host/Origin 校验
+    host="edgeone-pages",
 )
 
 
@@ -87,17 +97,6 @@ async def _reject_non_mcp_methods(_request: Request) -> JSONResponse:
         {"error": "method not allowed：本端点仅接受 POST（MCP JSON-RPC）"},
         status_code=405,
     )
-
-
-@app.api_route("/debug-headers", methods=["GET", "POST"], include_in_schema=False)
-async def _debug_headers(request: Request) -> dict:
-    # 临时调试端点（#91 实测用，回填结论后删除）：回显 EO 实际转发的头形态
-    return {
-        "host": request.headers.get("host"),
-        "origin": request.headers.get("origin"),
-        "x-forwarded-host": request.headers.get("x-forwarded-host"),
-        "x-forwarded-proto": request.headers.get("x-forwarded-proto"),
-    }
 
 
 app.mount("/", _mcp_asgi)

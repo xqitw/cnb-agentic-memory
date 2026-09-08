@@ -540,13 +540,22 @@ def configure_require_headers(cli_flag: bool | None = None) -> None:
 
 
 def build_transport_security(
-    host_base: str, *, origin_schemes: tuple[str, ...] = ("http",)
+    host_base: str,
+    *,
+    origin_bases: tuple[str, ...] | None = None,
+    origin_schemes: tuple[str, ...] = ("http",),
 ) -> TransportSecuritySettings:
     """构建 DNS rebinding 防护白名单：localhost 族 + 指定基名的双形态展开。
 
     主流程（--host 监听）与对外部署适配层（#91 EdgeOne 等）共用同一实现，
-    避免双份白名单生成逻辑漂移。host_base 为对外 Host 基名（监听地址或反代/
-    平台转发后的对外域名），裸 IPv6 由内部 whitelist_host_base 统一裹方括号。
+    避免双份白名单生成逻辑漂移。host_base 为 Host 白名单基名（监听地址或
+    平台转发后函数实际收到的 Host 域名），裸 IPv6 由内部 whitelist_host_base
+    统一裹方括号。
+
+    origin_bases 为 Origin 白名单基名集（对外域名），缺省用 host_base——
+    直连/常规反代场景两者一致；EO 这类平台会把 Host 改写为内部源站域名而
+    Origin 原样透传，须分离传入（#91 实测：host=pages-*.qcloudteo.com，
+    origin=对外自定义域名）。
 
     框架对 :* 通配的匹配要求 Host/Origin 值带显式端口（startswith(base + ":")），
     而浏览器在默认端口（80/443）下不序列化端口（WHATWG origin 序列化），故每个
@@ -560,11 +569,16 @@ def build_transport_security(
     host_bases = dict.fromkeys(
         ["localhost", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", whitelist_host_base(host_base)]
     )
+    # 缺省 Origin 基名 = 全部 host_bases（含 localhost 族，main() 原行为）；
+    # 适配层显式传 origin_bases 时仅用传入集（对外域名，不含本机族）
+    origin_name_bases = (
+        host_bases if origin_bases is None else dict.fromkeys(whitelist_host_base(b) for b in origin_bases)
+    )
     allowed_hosts = [f"{b}:*" for b in host_bases] + list(host_bases)
     allowed_origins: list[str] = []
     for scheme in origin_schemes:
-        allowed_origins += [f"{scheme}://{b}" for b in host_bases]
-        allowed_origins += [f"{scheme}://{b}:*" for b in host_bases]
+        allowed_origins += [f"{scheme}://{b}" for b in origin_name_bases]
+        allowed_origins += [f"{scheme}://{b}:*" for b in origin_name_bases]
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=allowed_hosts,
