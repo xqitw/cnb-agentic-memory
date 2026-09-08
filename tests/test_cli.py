@@ -388,7 +388,7 @@ def test_keyword_empty_query_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_append_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLI append 命令直接用例（#54 盲区 1）。"""
+    """CLI append 命令直接用例。"""
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 
@@ -409,7 +409,7 @@ def test_append_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_delete_outputs_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLI delete 命令直接用例（#54 盲区 1）。"""
+    """CLI delete 命令直接用例。"""
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
@@ -427,7 +427,7 @@ def test_delete_outputs_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_recent_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLI recent 命令直接用例（#54 盲区 1）。"""
+    """CLI recent 命令直接用例。"""
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
 

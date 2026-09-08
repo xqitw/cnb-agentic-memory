@@ -91,7 +91,7 @@ def clamp_page_size(value: int) -> int:
 
 
 def _updated_at_sort_key(issue: Issue) -> tuple[int, str]:
-    """keyword_search 合并去重后的时序排序键（#51）。
+    """keyword_search 合并去重后的时序排序键。
 
     CNB 当前统一返回 UTC Z 后缀，但时区表示不能依赖（混入 +08:00 等
     偏移时字符串比较会错序）：优先解析为 datetime（aware，跨时区可比）。
@@ -463,7 +463,7 @@ class Memory:
         if content is not None:
             form.body = content
         # title 传纯空白视为"未提供"而忽略：update 的 title 是显式变更语义，
-        # 若走 normalize 兜底会静默把标题改成正文首行（#56）
+        # 若走 normalize 兜底会静默把标题改成正文首行
         if title is not None and title.strip():
             form.title = normalize_title(title, content or title)
 

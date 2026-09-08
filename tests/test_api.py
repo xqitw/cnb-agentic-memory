@@ -120,7 +120,7 @@ async def test_query_knowledge_base(client: CNBApiClient) -> None:
 
 
 async def test_query_knowledge_base_score_threshold_passed(client: CNBApiClient) -> None:
-    """score_threshold 传入时透传为查询参数（#54 盲区 2）。"""
+    """score_threshold 传入时透传为查询参数。"""
     kb_item = {
         "score": 0.98,
         "chunk": "片段",
@@ -135,7 +135,7 @@ async def test_query_knowledge_base_score_threshold_passed(client: CNBApiClient)
 
 
 async def test_query_knowledge_base_omits_threshold_when_none(client: CNBApiClient) -> None:
-    """score_threshold=None（默认）时不携带该参数（#54 盲区 2 反向）。"""
+    """score_threshold=None（默认）时不携带该参数（反向）。"""
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/group/repo/-/knowledge/base/query").respond(200, json=[])
         await client.query_knowledge_base("分区表")

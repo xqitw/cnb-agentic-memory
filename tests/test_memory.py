@@ -418,7 +418,7 @@ async def test_update_title_and_tags_same_call(client: CNBApiClient, monkeypatch
 
 
 async def test_update_blank_title_ignored(client: CNBApiClient) -> None:
-    """update title 传纯空白视为未提供而忽略，不静默改题（#56）。"""
+    """update title 传纯空白视为未提供而忽略，不静默改题。"""
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         patch = mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
@@ -432,7 +432,7 @@ async def test_update_blank_title_ignored(client: CNBApiClient) -> None:
 
 
 async def test_update_blank_title_only_raises(client: CNBApiClient) -> None:
-    """update 仅传空白 title（无其他变更）落入未指定任何变更报错，非静默（#56 组合用例）。"""
+    """update 仅传空白 title（无其他变更）落入未指定任何变更报错，非静默（组合用例）。"""
     memory = Memory(client)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.patch("/group/repo/-/issues/5").mock(side_effect=echo_issue(5))
@@ -445,7 +445,7 @@ async def test_update_blank_title_only_raises(client: CNBApiClient) -> None:
 async def test_update_blank_title_with_content_only_patches_body(
     client: CNBApiClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """空白 title + content 只 PATCH body，不 PATCH title（#56 组合用例）。"""
+    """空白 title + content 只 PATCH body，不 PATCH title（组合用例）。"""
     monkeypatch.setattr("cnb_agentic_memory.memory.VERIFY_INTERVAL_SECONDS", 0)
     memory = Memory(client)
     with respx.mock(base_url=BASE) as mock:
@@ -627,7 +627,7 @@ async def test_search_kb_unavailable_suggests_fallback(client: CNBApiClient) -> 
 
 
 async def test_search_skips_unreadable_hit(client: CNBApiClient) -> None:
-    """单命中回读失败（如已清理/网络异常）跳过该条，不中断整体检索（#54 盲区 3）。"""
+    """单命中回读失败（如已清理/网络异常）跳过该条，不中断整体检索。"""
     memory = Memory(client)
     kb_items = [
         {"score": 0.99, "chunk": "片段1", "metadata": {"path": "/group/repo/-/issues/21", "type": "issue"}},
