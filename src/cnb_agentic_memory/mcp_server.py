@@ -24,6 +24,7 @@ from typing import Any, cast
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.context import Context
+from mcp.server.transport_security import TransportSecuritySettings
 
 from . import __version__
 from .api import SharedClientPool, env, resolve_overrides_from_headers
@@ -630,8 +631,6 @@ def main(argv: list[str] | None = None) -> None:
         # 监听地址直连形式，不提供扩展入口：对外部署一律置于反代之后，访问
         # 控制与 Host 白名单属代理层职责（扩展白名单入口已按 #85 裁剪——其
         # 输入形态 × 匹配语义矩阵的维护成本远超防御价值，见 PR !84 八轮复审）。
-        from mcp.server.transport_security import TransportSecuritySettings
-
         # 框架对 :* 通配的匹配要求 Host/Origin 值带显式端口（startswith(base + ":")），
         # 而浏览器在默认端口（80/443）下不序列化端口（WHATWG origin 序列化），故每个
         # 基名同时生成 :* 端口通配（非标准端口兜底）与无端口精确（默认端口场景）两种
