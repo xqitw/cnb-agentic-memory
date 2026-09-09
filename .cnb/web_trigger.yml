@@ -2,10 +2,20 @@
 # 结构对齐 xqitw/portfolio；inputs 即流水线 env（DEPLOY_NAME / DEPLOY_ENV）
 branch:
   - buttons:
+      - name: 启动 DSH
+        description: 一键启动 DeepSeekHarness 云原生开发
+        event: web_trigger_dsh
+        isDefault: true
+        inputs:
+          RUNNER_CPUS:
+            name: cpu 核数
+            description: cpu核数 默认为8
+            required: true
+            type: input
+            default: "8"
       - name: 一键部署
         description: 一键部署到腾讯云 EdgeOne Pages（streamable-http 承载 MCP Server）
         event: web_trigger_deploy
-        isDefault: true
         inputs:
           DEPLOY_NAME:
             name: 项目名称

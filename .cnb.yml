@@ -177,8 +177,21 @@ $:
   vscode:
     - docker:
         image: docker.cnb.cool/xqitw/docker/dev-base:latest
+      services:
+        - vscode
+        - docker
+      stages:
+        - name: vscode go
+          type: vscode:go
+  # web 触发器:web 页面手动触发部署到 EdgeOne Pages($ 兜底分支,官方 Schema 建议)
+  web_trigger_deploy:
+    - *edgeone-deploy
+  # web 触发器:web 页面手动触发启动 DeepSeekHarness 云原生开发环境($ 兜底分支,官方 Schema 建议)
+  web_trigger_dsh:
+    - docker:
+        image: docker.cnb.cool/xqitw/docker/dev-base:latest
       runner:
-        cpus: 8
+        cpus: $RUNNER_CPUS
       services:
         - name: vscode
           options:
@@ -190,9 +203,6 @@ $:
       stages:
         - name: vscode go
           type: vscode:go
-  # web 触发器:web 页面手动触发部署到 EdgeOne Pages($ 兜底分支,官方 Schema 建议)
-  web_trigger_deploy:
-    - *edgeone-deploy
   # 打 tag (v*):测试 + 发 PyPI + code-wiki + git release + 同步至 GitHub + 发布 Skill
   tag_push:
     - <<: *pypi-publish
