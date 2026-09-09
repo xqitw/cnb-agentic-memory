@@ -10,10 +10,10 @@ branch:
         inputs:
           RUNNER_CPUS:
             name: cpu 核数
-            description: cpu核数 默认为8
+            description: cpu核数 默认为16
             required: true
             type: input
-            default: "8"
+            default: "16"
           RUNNER_TAGS:
             name: 节点类型
             description: 注意L40节点消耗 云原生开发-GPU 额度，CPU节点消耗 云原生开发-CPU 额度
@@ -21,7 +21,7 @@ branch:
             type: select
             default: cnb:arch:amd64
             options:
-              - name: cpus 可配置范围为 1 ~ 64，默认为 8，amd64 架构
+              - name: cpus 可配置范围为 1 ~ 64，默认为 16，amd64 架构
                 value: cnb:arch:amd64
               - name: cpus 固定为 16，amd64 架构 GPU 显存最大为 48GB，共享模式
                 value: cnb:arch:amd64:gpu
