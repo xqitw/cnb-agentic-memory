@@ -5,6 +5,7 @@ branch:
       - name: 启动 DSH
         description: 一键启动 DeepSeekHarness 云原生开发
         event: web_trigger_dsh
+        openWorkspace: true
         isDefault: true
         inputs:
           RUNNER_CPUS:
