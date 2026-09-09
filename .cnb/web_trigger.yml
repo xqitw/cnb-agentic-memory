@@ -14,6 +14,21 @@ branch:
             required: true
             type: input
             default: "8"
+          RUNNER_TAGS:
+            name: 节点类型
+            description: 注意H20、L40节点消耗 云原生开发-GPU 额度，CPU节点消耗 云原生开发-CPU 额度
+            required: true
+            type: select
+            default: cnb:arch:amd64
+            options:
+              - name: cpus 可配置范围为 1 ~ 64，默认为 8，amd64 架构
+                value: cnb:arch:amd64
+              - name: cpus 固定为 16，amd64 架构 GPU 显存最大为 48GB，共享模式
+                value: cnb:arch:amd64:gpu
+              - name: cpus 固定为 32，amd64 架构 GPU 显存最大为 96GB，共享模式
+                value: cnb:arch:amd64:gpu:H20
+              - name: cpus 固定为 16，amd64 架构 GPU 显存最大为 48GB，共享模式
+                value: cnb:arch:amd64:gpu:L40
       - name: 一键部署
         description: 一键部署到腾讯云 EdgeOne Pages（streamable-http 承载 MCP Server）
         event: web_trigger_deploy

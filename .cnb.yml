@@ -192,6 +192,7 @@ $:
         image: docker.cnb.cool/xqitw/docker/dev-base:latest
       runner:
         cpus: $RUNNER_CPUS
+        tags: $RUNNER_TAGS
       services:
         - name: vscode
           options:
