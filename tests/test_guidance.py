@@ -90,6 +90,30 @@ def test_config_error_runtime_message_carries_guidance() -> None:
         os.environ.update({k: v for k, v in saved.items() if v is not None})
 
 
+def test_error_contract_gates_colocated() -> None:
+    """错误契约闸门与判据同句共现（docs 与 instructions 两侧，位置敏感）。
+
+    历史事故：ab60e65 改写时 isError 闸门从 docs 静默丢失、f3bd292 才被
+    评审点出；本轮锚点曾只断言子串出现，闸门被删或搬离判据仍全绿。
+    升级为同句共现 + 位置关系断言：闸门限定词（isError=true）必须出现在
+    判据文案（缺少必需配置）之前，闸门再丢或挪位即红。
+    """
+    # docs/MCP.md 例外条款：所在行须同时含闸门与判据，且闸门在前
+    mcp_doc = Path("docs/MCP.md").read_text(encoding="utf-8")
+    gate_line = next(line for line in mcp_doc.splitlines() if "缺少必需配置" in line and "例外" in line)
+    assert "isError=true" in gate_line, "docs/MCP.md 例外条款丢失 isError=true 闸门"
+    assert "仅在" in gate_line, "docs/MCP.md 例外条款丢失「仅在」限定"
+    assert gate_line.index("isError=true") < gate_line.index("缺少必需配置"), (
+        "docs/MCP.md 闸门（isError=true）须出现在判据文案之前"
+    )
+    # instructions 第 5 条：同句共现（闸门 + 形状排除）
+    instructions = mcp_server.mcp.instructions or ""
+    rule5 = next(seg for seg in instructions.split("5.") if "缺少必需配置" in seg)
+    assert "isError=true" in rule5, "instructions 第 5 条丢失 isError=true 闸门"
+    assert "validation error" in rule5, "instructions 第 5 条丢失 ② 形状排除"
+    assert rule5.index("isError=true") < rule5.index("缺少必需配置"), "instructions 闸门须出现在判据文案之前"
+
+
 def test_memory_error_contains_recovery_ladder() -> None:
     """语义层源码必须包含恢复阶梯锚点（AGENTS.md 同步点 4，静态断言）。"""
     memory_src = Path("src/cnb_agentic_memory/memory.py").read_text(encoding="utf-8")
