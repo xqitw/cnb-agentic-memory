@@ -92,56 +92,57 @@ def test_config_error_runtime_message_carries_guidance() -> None:
 
 
 def test_error_contract_gates_colocated() -> None:
-    """错误契约闸门与判据同句共现（docs 与 instructions 两侧，位置敏感）。
+    """错误契约闸门与判据以「规范短语整段」锁定（docs 与 instructions 两侧）。
 
-    历史事故：ab60e65 改写时 isError 闸门从 docs 静默丢失、f3bd292 才被
-    评审点出；本轮锚点曾只断言子串出现，闸门被删或搬离判据仍全绿。
-    升级为同句共现 + 位置关系断言：闸门限定词（isError=true）必须出现在
-    判据文案（缺少必需配置）之前，闸门再丢或挪位即红。
+    历史事故链：裸子串断言被加尾缀/删槽位/换口径穿透（第八、九轮评审
+    实测 Unknown tool→Unknown toolX、含→不包含、validation error→
+    ValidationError 均不报警），故断言一律取规范短语整段而非裸子串。
     """
-    # docs/MCP.md 例外条款：切片到「例外」之后再断言——整行含 ①②③ 各自的
-    # isError=true，「同行出现」不等于例外条款被守护（锐鉴第六轮实测穿透）
+    import re as _re
+
+    # docs/MCP.md 例外条款：切片到「例外」之后再断言（同行出现 ≠ 条款被守护）
     mcp_doc = Path("docs/MCP.md").read_text(encoding="utf-8")
     gate_line = next(line for line in mcp_doc.splitlines() if "缺少必需配置" in line and "例外" in line)
-    exception_seg = gate_line.split("例外", 1)[1]  # 只看例外条款本体
+    exception_seg = gate_line.split("例外", 1)[1]
     assert "isError=true" in exception_seg, "docs/MCP.md 例外条款丢失 isError=true 闸门"
     assert "仅在" in exception_seg, "docs/MCP.md 例外条款丢失「仅在」限定"
     assert exception_seg.index("isError=true") < exception_seg.index("缺少必需配置"), (
         "docs/MCP.md 闸门（isError=true）须出现在判据文案之前"
     )
-    # 判据形态（第六轮引入）：「含「缺少必需配置：」+ 不含排除形态」组合。
-    # 变异实测（锐鉴/幽明 M1/M9/G3）：整段退回旧 startswith 形态或删排除项均静默失效，
-    # 故形态三要素逐一钉住。
-    assert "含「缺少必需配置：」" in exception_seg, "docs/MCP.md 例外条款丢失「含」判据形态"
+    # 判据规范短语整段：主语「且正文**含「缺少必需配置：」」穿透 markdown 加粗；
+    # 锚整段短语而非裸子串——含→不包含/未含等任何否定语素替换、删主语均即红
+    assert _re.search(r"且正文\*{0,2}含「缺少必需配置：」", exception_seg), (
+        "docs/MCP.md 例外条款判据主语丢失或否定方向反转（须为「且正文含「缺少必需配置：」」）"
+    )
     assert "不含 `validation error` / `Unknown tool`" in exception_seg, (
         "docs/MCP.md 例外条款丢失排除形态（validation error / Unknown tool）"
     )
     assert "以「缺少必需配置：」开头" not in exception_seg, (
         "docs/MCP.md 例外条款回退为旧 startswith 形态（框架强制前缀下恒不命中）"
     )
-    # 主语正向断言（幽明第八轮变异：含→不含 整句反转，判据后果完全倒置仍全绿）
-    # 匹配穿透 markdown 加粗；前导字符为「不」即判主语否定方向反转
-    import re as _re
-
-    m = _re.search(r"(.)(含)([^。]{0,4})「缺少必需配置：」", exception_seg)
-    assert m is not None, "docs/MCP.md 例外条款判据主语丢失（不再是「含」）"
-    assert m.group(1) != "不", "docs/MCP.md 例外条款主语否定方向反转（含→不含）"
-    # instructions 第 5 条：同句共现（闸门 + 形状排除 + 形态）
+    # ② 正向判据口径锚点（第九轮：换口径 ValidationError / 改计数不报警）
+    assert "正文含 `validation error`" in mcp_doc, (
+        "docs/MCP.md ② 正向判据口径被改（须为宽口径 validation error，单复数通吃）"
+    )
+    # instructions 第 5 条：定位加固（split("5.") 在「五、」时退化为全文——
+    # 改用正则锚定行首编号，退化即断言失败而非静默变绿）
     instructions = mcp_server.mcp.instructions or ""
-    rule5 = next(seg for seg in instructions.split("5.") if "缺少必需配置" in seg)
+    seg5 = _re.search(r"5\.[^\n]*", instructions)
+    assert seg5 is not None, "instructions 第 5 条定位失败（编号缺失）"
+    rule5 = seg5.group(0)
+    assert "缺少必需配置" in rule5, "instructions 第 5 条判据丢失"
     assert "isError=true" in rule5, "instructions 第 5 条丢失 isError=true 闸门"
-    assert "validation error" in rule5, "instructions 第 5 条丢失 ② 形状排除"
-    assert "Unknown tool" in rule5, "instructions 第 5 条丢失 Unknown tool 形状"
     assert rule5.index("isError=true") < rule5.index("缺少必需配置"), "instructions 闸门须出现在判据文案之前"
-    # 否定词语义（幽明 H1 变异：且不含→且含 完全反转不报警）
+    # 判据规范短语整段（主语正向 + 排除槽整段，与 docs 侧同款）
+    assert "正文含「缺少必需配置：」" in rule5, "instructions 第 5 条判据主语丢失或否定方向反转"
     assert "不含 validation error" in rule5, "instructions 第 5 条否定词反转（排除项被改为命中）"
-    # 主语正向断言（幽明第八轮变异：整句反转不报警）
-    m5 = _re.search(r"(.)(含)([^。]{0,4})「缺少必需配置：」", rule5)
-    assert m5 is not None, "instructions 第 5 条判据主语丢失"
-    assert m5.group(1) != "不", "instructions 第 5 条主语否定方向反转（含→不含）"
-    # 排除项完整字面量（幽明第八轮变异：Unknown tool → Unknown toolX 弱化仍通过）
-    assert "Unknown tool:" in rule5, "instructions 第 5 条排除项被加尾缀弱化"
-    # 旧形态禁用（幽明 G5/G6 变异：回退为 startswith 形态不报警）
+    # 排除槽整段规范短语（第九轮：删槽位内 Unknown tool 后裸子串仍被后文命中）
+    assert "不含 validation error / Unknown tool:" in rule5, (
+        "instructions 第 5 条排除槽丢失 Unknown tool:（删槽位/加尾缀即红）"
+    )
+    # 宽口径措辞锚点（第九轮：单数或复数 被撤销即回退单数硬计数）
+    assert "单数或复数" in rule5, "instructions 第 5 条丢失宽口径措辞（单数或复数）"
+    # 旧形态禁用
     assert "以「缺少必需配置：」开头" not in rule5, "instructions 第 5 条回退为旧 startswith 形态"
 
 
@@ -153,12 +154,18 @@ def test_error_contract_mutation_guards() -> None:
     错误文本样本取自协议层真实形态：③ 无明细（框架吞掉，仅服务端日志）、
     ② 单/复数 validation error、Unknown tool 无前缀。
     """
-    # 判据词从文档实际文本构造（幽明第八轮：judge 硬编码与文档零连接是假绑定）
+    # 判据词从文档实际文本构造（真绑定：文档改措辞而本用例未同步即红）
     mcp_doc = Path("docs/MCP.md").read_text(encoding="utf-8")
     gate_line = next(line for line in mcp_doc.splitlines() if "缺少必需配置" in line and "例外" in line)
     exception_seg = gate_line.split("例外", 1)[1]
     instructions = mcp_server.mcp.instructions or ""
-    rule5 = next(seg for seg in instructions.split("5.") if "缺少必需配置" in seg)
+    # 定位加固：split("5.") 在编号改成「五、」时退化为全文（第九轮实测）
+    import re as _re
+
+    seg5 = _re.search(r"5\.[^\n]*", instructions)
+    assert seg5 is not None, "instructions 第 5 条定位失败（编号缺失）"
+    rule5 = seg5.group(0)
+    assert "缺少必需配置" in rule5, "instructions 第 5 条判据丢失"
 
     # 排除形态词：例外条款与 instructions 第 5 条都要求「不含 validation error / Unknown tool」
     config_marker = "缺少必需配置："  # 配置缺失判据字面量（与 api.py _validate_config 同源）
@@ -204,14 +211,25 @@ def test_error_contract_mutation_guards() -> None:
             "Error executing tool memory_get: 1 validation error for memory_getArguments [input_value=缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN]",
             "param",
         ),
-        # ① 顶层键判据反例：error 键在 JSON 靠后位置（窗口子串查找会误判，须按顶层键）
+        # ① 顶层键判据反例：成功结果的 body 值内嵌 "error" 字面量（文档已言明的形态）——
+        # 窗口/全文子串查找误判 business，只有顶层键判据能正确判 success
         (
-            "①error键靠后",
+            "①body内嵌error字面量",
             False,
-            '{"number": 42, "title": "t", "body": "x", "error": "state 仅支持 open/closed"}',
-            "business",
+            '{"number": 3, "title": "t", "body": "前置 {\\"error\\": \\"写路径回读校验失败\\"} 结尾"}',
+            "success",
         ),
     ]
+    # 样本存在性断言（第九轮：删样本/组合回退全绿——样本集自身必须被守护）
+    texts = "\n".join(text for _, _, text, _ in cases)
+    assert "1 validation error" in texts, "② 单数样本被删（单字段错误形态失去锁定）"
+    assert "validation errors for" in texts, "② 复数样本被删（多字段错误形态失去锁定，第七轮修复静默退化）"
+    assert "Unknown tool:" in texts, "② 未知工具样本被删"
+    assert "缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN" in texts, "配置缺失样本被删"
+    case_3 = next(text for name, _, text, _ in cases if name == "③未捕获异常")
+    assert case_3 == "Error executing tool memory_get", (
+        "③ 无明细样本形态漂移（框架真实形态为无明细的 Error executing tool <名称>）"
+    )
 
     def judge(is_error: bool, text: str) -> str:
         if not is_error:
