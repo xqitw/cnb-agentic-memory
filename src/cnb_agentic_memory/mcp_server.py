@@ -132,11 +132,12 @@ mcp = MCPServer(
         "4. memory_list / memory_keyword_search 不回显正文（body 为 null），"
         "需要全文用 memory_get。\n"
         "5. 工具返回 isError=true 且正文含「缺少必需配置：」且不含 validation error"
-        " / Unknown tool: 时（配置缺失类错误；正文含 1 validation error 是参数"
-        "Schema 校验错误、正文以 Unknown tool: 开头是工具名拼错——均改参重试即可）："
-        "凭据只能来自用户、调用方配置或请求头（视部署形态），把缺失项清单转达给"
-        "用户并等其完成配置后重试——不要猜测连接参数，不要编造或代填凭据。"
-        "isError=false 的成功结果与参数错误回显都可能含该字面量，勿据内容误判。"
+        " / Unknown tool: 时（配置缺失类错误；正文含 validation error（单数或复数）"
+        "是参数 Schema 校验错误、正文以 Unknown tool: 开头是工具名拼错——均改参"
+        "重试即可）：凭据只能来自用户、调用方配置或请求头（视部署形态），"
+        "把缺失项清单转达给用户并等其完成配置后重试——不要猜测连接参数，"
+        "不要编造或代填凭据。isError=false 的成功结果与参数错误回显都可能含"
+        "该字面量，勿据内容误判。"
     ),
 )
 

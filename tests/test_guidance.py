@@ -147,6 +147,12 @@ def test_error_contract_mutation_guards() -> None:
             "Error executing tool memory_get: 1 validation error for memory_getArguments",
             "param",
         ),
+        (
+            "②多字段校验",
+            True,
+            "Error executing tool memory_write: 2 validation errors for memory_writeArguments",
+            "param",
+        ),
         ("②未知工具", True, "Unknown tool: memory_typo", "param"),
         ("③未捕获ApiError", True, "Error executing tool memory_get: CNB API 500: {}", "unexpected"),
         (
@@ -173,7 +179,8 @@ def test_error_contract_mutation_guards() -> None:
     def judge(is_error: bool, text: str) -> str:
         if not is_error:
             return "business" if '"error"' in text[:200] else "success"
-        if "1 validation error" in text or text.startswith("Unknown tool:"):
+        # validation error 不含计数：单/多字段分别为 1 validation error / N validation errors
+        if "validation error" in text or text.startswith("Unknown tool:"):
             return "param"
         if "缺少必需配置：" in text:
             return "config"
