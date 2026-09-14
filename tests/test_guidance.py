@@ -117,6 +117,18 @@ def test_error_contract_gates_colocated() -> None:
     assert "以「缺少必需配置：」开头" not in exception_seg, (
         "docs/MCP.md 例外条款回退为旧 startswith 形态（框架强制前缀下恒不命中）"
     )
+    # ①②③ 正反向示例句对称锚点（幽明第九轮条 4：同类方向锚只在例外段建了）
+    clause = gate_line  # 条款本体（单行，含 ①②③ 与例外）
+    assert "③ 无明细" in clause, "docs/MCP.md ③ 明细方向反转（真实形态为无明细）"
+    assert "顶层 JSON 的 `error` 键" in clause, "docs/MCP.md ① 判据口径被改（须为顶层 JSON 的 error 键）"
+    assert "正文含 `validation error`" in clause, "docs/MCP.md ② 正向判据口径被改"
+    assert "② 的明细在正文里，③ 无明细" in clause, "docs/MCP.md ②③ 明细区分句丢失"
+    # ①②③ 正反向示例句对称锚点（幽明第九轮条 4：同类方向锚只在例外段建了）
+    clause = gate_line  # 条款本体（单行，含 ①②③ 与例外）
+    assert "③ 无明细" in clause, "docs/MCP.md ③ 明细方向反转（真实形态为无明细）"
+    assert "顶层 JSON 的 `error` 键" in clause, "docs/MCP.md ① 判据口径被改（须为顶层 JSON 的 error 键）"
+    assert "正文含 `validation error`" in clause, "docs/MCP.md ② 正向判据口径被改"
+    assert "② 的明细在正文里，③ 无明细" in clause, "docs/MCP.md ②③ 明细区分句丢失"
     # ② 正向判据口径锚点（第九轮：换口径 ValidationError / 改计数不报警）
     assert "正文含 `validation error`" in mcp_doc, (
         "docs/MCP.md ② 正向判据口径被改（须为宽口径 validation error，单复数通吃）"
@@ -139,6 +151,14 @@ def test_error_contract_gates_colocated() -> None:
     # 判据主语精确字面量（第十轮：同 docs 侧，堵同族否定写法与连接词放宽）
     assert "且正文含「缺少必需配置：」" in rule5, "instructions 第 5 条判据主语丢失或方向反转"
     assert "且不含 validation error" in rule5, "instructions 第 5 条否定词反转（排除项被改为命中）"
+    # 说明句口径词对称锚点（幽明第九轮条 3：docs 同语义句有锚、instructions 说明句无锚）
+    assert "validation error" in rule5 and "单数或复数" in rule5, (
+        "instructions 第 5 条说明句丢失宽口径口径词（单数或复数）"
+    )
+    # 说明句口径词对称锚点（幽明第九轮条 3：docs 同语义句有锚、instructions 说明句无锚）
+    assert "validation error" in rule5 and "单数或复数" in rule5, (
+        "instructions 第 5 条说明句丢失宽口径口径词（单数或复数）"
+    )
     # 排除条款整句锚点（第十轮：rule5 里 Unknown tool: 出现 2 次，裸子串被说明文字喂饱）
     assert "且不含 validation error / Unknown tool: 时" in rule5, "instructions 第 5 条排除条款被删或弱化"
     # 宽口径措辞锚点（第九轮：单数或复数 被撤销即回退单数硬计数）
@@ -164,13 +184,10 @@ def test_error_contract_mutation_guards() -> None:
     gate_line = next(line for line in mcp_doc.splitlines() if "缺少必需配置" in line and "例外" in line)
     exception_seg = gate_line.split("例外", 1)[1]
     instructions = mcp_server.mcp.instructions or ""
-    # 定位加固：split("5.") 在编号改成「五、」时退化为全文（第九轮实测）
-    import re as _re
-
-    seg5 = _re.search(r"5\.[^\n]*", instructions)
-    assert seg5 is not None, "instructions 第 5 条定位失败（编号缺失）"
-    rule5 = seg5.group(0)
-    assert "缺少必需配置" in rule5, "instructions 第 5 条判据丢失"
+    # 第 5 条定位：取「5.」出现的行并要求行内含判据——避免全文首个 5. 的误报面
+    rule5 = next(
+        line for line in instructions.splitlines() if line.startswith("5.") and "缺少必需配置" in line
+    )
 
     # 排除形态词：例外条款与 instructions 第 5 条都要求「不含 validation error / Unknown tool」
     config_marker = "缺少必需配置："  # 配置缺失判据字面量（与 api.py _validate_config 同源）
@@ -220,33 +237,59 @@ def test_error_contract_mutation_guards() -> None:
         # 只有 json.loads 顶层键判据能正确判 success——第十轮：75 字符样本在 200 窗口内无判别力）
         ("①error非顶层", False, '{"data": {"error": "state 仅支持 open/closed"}}', "success"),
     ]
-    # 样本存在性断言（第十轮：拼接串裸子串被邻样本喂饱——改按用例名精确取值）
-    by_name = {name: text for name, _, text, _ in cases}
-    assert "1 validation error" in by_name["②Schema校验"], "② 单数样本被删或形态漂移"
-    assert "validation errors for" in by_name["②多字段校验"], "② 复数样本被删或形态漂移（第七轮修复静默退化）"
-    assert "Unknown tool:" in by_name["②未知工具"], "② 未知工具样本被删或形态漂移"
-    assert "缺少必需配置：" in by_name["配置缺失"], "配置缺失样本被删或形态漂移"
-    assert by_name["③未捕获异常"] == "Error executing tool memory_get", (
-        "③ 无明细样本形态漂移（框架真实形态为无明细的 Error executing tool <名称>）"
-    )
 
-    def judge(is_error: bool, text: str) -> str:
-        if not is_error:
-            # ① 判据与文档同源：顶层 JSON 的 error 键（非窗口子串查找）
-            try:
-                return "business" if "error" in json.loads(text) else "success"
-            except ValueError:
-                return "success"
-        for marker in param_markers:  # ② 宽口径（单/复数/未知工具），词表与文档同源
-            if marker in text:
-                return "param"
-        if config_marker in text:
-            return "config"
-        return "unexpected"
+    # 样本守护（幽明第九轮：样本集自身无守卫，删样本/组合回退全绿）——
+    # 按用例名精确取值，逐条断言存在 + 判别性形态；10/10 全覆盖，删任何一条或削形态即红
+    by_name = {name: text for name, _, text, _ in cases}
+    expected_shapes = {
+        "①业务拒绝": ('{"error"', None),
+        "①部分落盘": ('{"error"', None),
+        "②Schema校验": ("1 validation error", None),
+        "②多字段校验": ("2 validation errors", None),
+        "②未知工具": ("Unknown tool:", None),
+        "③未捕获异常": ("Error executing tool memory_get", "validation error"),  # 无明细
+        "配置缺失": ("缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN", None),
+        "成功正文含字面量": ("缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN", None),
+        "②实参回显含字面量": ("1 validation error", None),
+        "①error非顶层": ('{"data"', None),
+    }
+    for name, (must_contain, must_not_contain) in expected_shapes.items():
+        assert name in by_name, f"判据链样本 {name!r} 被删——样本集守护失效"
+        text = by_name[name]
+        assert must_contain in text, f"样本 {name!r} 形态漂移：丢失 {must_contain!r}"
+        if must_not_contain:
+            assert must_not_contain not in text, f"样本 {name!r} 形态漂移：不应含 {must_not_contain!r}"
+
+    # 判据优先级锁定（幽明：删②实参回显样本+倒置 config/param 顺序可全绿）——
+    # ② 排除形态必须先于配置缺失判据被检验（顺序语义即契约）；judge 分支顺序与之同源
+    overlapping = "1 validation error [input_value=缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN]"
+    assert param_first(overlapping) == "param"
+    pure_config = "缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN（CNB API 令牌）"
+    assert param_first(pure_config) == "config"
 
     for name, is_error, text, expected in cases:
         actual = judge(is_error, text)
         assert actual == expected, f"{name}：判据落点 {actual} ≠ 预期 {expected}"
+
+
+def param_first(text: str) -> str:
+    """judge 的②/config 分支顺序语义复刻（②先于 config）。"""
+    for marker in ("validation error", "Unknown tool:"):
+        if marker in text:
+            return "param"
+    if "缺少必需配置：" in text:
+        return "config"
+    return "unexpected"
+
+
+def judge(is_error: bool, text: str) -> str:
+    """判据链复刻（与 param_first 顺序同源）：① 顶层键 → ② 宽口径 → config。"""
+    if not is_error:
+        try:
+            return "business" if "error" in json.loads(text) else "success"
+        except ValueError:
+            return "success"
+    return param_first(text)
 
 
 def test_memory_error_contains_recovery_ladder() -> None:
