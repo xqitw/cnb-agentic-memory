@@ -4,9 +4,10 @@
 - 薄适配层：工具与 Memory 方法一一对应，业务逻辑（两步写入/回读校验/
   title 不变量/超长拆分/软删除）全部在 SDK 层
 - 工具描述内嵌使用指导（title 撰写规范等），供智能体理解调用方式
-- 错误处理：ApiError 抛给框架转 isError 结果；MemoryRuleError 转为
-  {"error": ...} 正常结果文本；ConfigError 转 ToolError（协议级 isError），
-  均不包装语义，智能体收到后自行决策重试或降级
+- 错误处理：MemoryRuleError 转为 {"error": ...} 正常结果文本（isError=false，
+  按 error 字段判别）；ConfigError 转 ToolError（协议级 isError=true，全文上行）；
+  未捕获 ApiError 被框架包装为笼统文案（isError=true，明细仅服务端日志）——
+  智能体按类别自行决策重试或降级
 - 配置优先级：请求头（X-CNB-Token/X-CNB-Repo/X-CNB-Base-URL，多用户共享部署时
   每请求覆盖）> CNB_AGENTIC_MEMORY_ 环境变量；stdio 下无请求头，自然回落环境变量
 """
