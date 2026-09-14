@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from pathlib import Path
 
@@ -118,6 +119,13 @@ def test_error_contract_gates_colocated() -> None:
     assert "以「缺少必需配置：」开头" not in exception_seg, (
         "docs/MCP.md 例外条款回退为旧 startswith 形态（框架强制前缀下恒不命中）"
     )
+    # 主语正向断言（幽明第八轮变异：含→不含 整句反转，判据后果完全倒置仍全绿）
+    # 匹配穿透 markdown 加粗；前导字符为「不」即判主语否定方向反转
+    import re as _re
+
+    m = _re.search(r"(.)(含)([^。]{0,4})「缺少必需配置：」", exception_seg)
+    assert m is not None, "docs/MCP.md 例外条款判据主语丢失（不再是「含」）"
+    assert m.group(1) != "不", "docs/MCP.md 例外条款主语否定方向反转（含→不含）"
     # instructions 第 5 条：同句共现（闸门 + 形状排除 + 形态）
     instructions = mcp_server.mcp.instructions or ""
     rule5 = next(seg for seg in instructions.split("5.") if "缺少必需配置" in seg)
@@ -127,16 +135,37 @@ def test_error_contract_gates_colocated() -> None:
     assert rule5.index("isError=true") < rule5.index("缺少必需配置"), "instructions 闸门须出现在判据文案之前"
     # 否定词语义（幽明 H1 变异：且不含→且含 完全反转不报警）
     assert "不含 validation error" in rule5, "instructions 第 5 条否定词反转（排除项被改为命中）"
+    # 主语正向断言（幽明第八轮变异：整句反转不报警）
+    m5 = _re.search(r"(.)(含)([^。]{0,4})「缺少必需配置：」", rule5)
+    assert m5 is not None, "instructions 第 5 条判据主语丢失"
+    assert m5.group(1) != "不", "instructions 第 5 条主语否定方向反转（含→不含）"
+    # 排除项完整字面量（幽明第八轮变异：Unknown tool → Unknown toolX 弱化仍通过）
+    assert "Unknown tool:" in rule5, "instructions 第 5 条排除项被加尾缀弱化"
     # 旧形态禁用（幽明 G5/G6 变异：回退为 startswith 形态不报警）
     assert "以「缺少必需配置：」开头" not in rule5, "instructions 第 5 条回退为旧 startswith 形态"
 
 
 def test_error_contract_mutation_guards() -> None:
-    """错误契约变异回归：第六轮已修复的三种事故形态再次出现时必须报警。
+    """错误契约变异回归：文档措辞与协议行为的绑定由本用例锁定。
 
-    用例内直接复刻文档判据链，对四类真实错误文本逐一验证落点——
-    文档措辞与协议行为的绑定不再依赖人工 diff 核对。
+    判据词（排除形态/判据字面量）从 docs/MCP.md 与 instructions 的实际文本
+    抽取构造——文档措辞变更而用例未同步即红（真绑定，非测试内硬编码复刻）。
+    错误文本样本取自协议层真实形态：③ 无明细（框架吞掉，仅服务端日志）、
+    ② 单/复数 validation error、Unknown tool 无前缀。
     """
+    # 判据词从文档实际文本构造（幽明第八轮：judge 硬编码与文档零连接是假绑定）
+    mcp_doc = Path("docs/MCP.md").read_text(encoding="utf-8")
+    gate_line = next(line for line in mcp_doc.splitlines() if "缺少必需配置" in line and "例外" in line)
+    exception_seg = gate_line.split("例外", 1)[1]
+    instructions = mcp_server.mcp.instructions or ""
+    rule5 = next(seg for seg in instructions.split("5.") if "缺少必需配置" in seg)
+
+    # 排除形态词：例外条款与 instructions 第 5 条都要求「不含 validation error / Unknown tool」
+    config_marker = "缺少必需配置："  # 配置缺失判据字面量（与 api.py _validate_config 同源）
+    param_markers = ("validation error", "Unknown tool:")  # ② 识别形态（宽口径，单复数通吃）
+    for marker in (config_marker,) + param_markers:
+        assert marker in exception_seg or marker in rule5, f"判据词 {marker!r} 已从文档/instructions 消失"
+
     cases = [
         # (名称, is_error, 正文, 期望判定)
         ("①业务拒绝", False, '{"error": "state 仅支持 open/closed"}', "business"),
@@ -154,7 +183,8 @@ def test_error_contract_mutation_guards() -> None:
             "param",
         ),
         ("②未知工具", True, "Unknown tool: memory_typo", "param"),
-        ("③未捕获ApiError", True, "Error executing tool memory_get: CNB API 500: {}", "unexpected"),
+        # ③ 真实形态：无明细（框架 tools/base.py:210 吞掉异常文本，仅服务端日志）
+        ("③未捕获异常", True, "Error executing tool memory_get", "unexpected"),
         (
             "配置缺失",
             True,
@@ -174,15 +204,26 @@ def test_error_contract_mutation_guards() -> None:
             "Error executing tool memory_get: 1 validation error for memory_getArguments [input_value=缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN]",
             "param",
         ),
+        # ① 顶层键判据反例：error 键在 JSON 靠后位置（窗口子串查找会误判，须按顶层键）
+        (
+            "①error键靠后",
+            False,
+            '{"number": 42, "title": "t", "body": "x", "error": "state 仅支持 open/closed"}',
+            "business",
+        ),
     ]
 
     def judge(is_error: bool, text: str) -> str:
         if not is_error:
-            return "business" if '"error"' in text[:200] else "success"
-        # validation error 不含计数：单/多字段分别为 1 validation error / N validation errors
-        if "validation error" in text or text.startswith("Unknown tool:"):
-            return "param"
-        if "缺少必需配置：" in text:
+            # ① 判据与文档同源：顶层 JSON 的 error 键（非窗口子串查找）
+            try:
+                return "business" if "error" in json.loads(text) else "success"
+            except ValueError:
+                return "success"
+        for marker in param_markers:  # ② 宽口径（单/复数/未知工具），词表与文档同源
+            if marker in text:
+                return "param"
+        if config_marker in text:
             return "config"
         return "unexpected"
 
