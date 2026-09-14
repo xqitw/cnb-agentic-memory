@@ -98,12 +98,14 @@ def test_error_contract_gates_colocated() -> None:
     升级为同句共现 + 位置关系断言：闸门限定词（isError=true）必须出现在
     判据文案（缺少必需配置）之前，闸门再丢或挪位即红。
     """
-    # docs/MCP.md 例外条款：所在行须同时含闸门与判据，且闸门在前
+    # docs/MCP.md 例外条款：切片到「例外」之后再断言——整行含 ①②③ 各自的
+    # isError=true，「同行出现」不等于例外条款被守护（锐鉴第六轮实测穿透）
     mcp_doc = Path("docs/MCP.md").read_text(encoding="utf-8")
     gate_line = next(line for line in mcp_doc.splitlines() if "缺少必需配置" in line and "例外" in line)
-    assert "isError=true" in gate_line, "docs/MCP.md 例外条款丢失 isError=true 闸门"
-    assert "仅在" in gate_line, "docs/MCP.md 例外条款丢失「仅在」限定"
-    assert gate_line.index("isError=true") < gate_line.index("缺少必需配置"), (
+    exception_seg = gate_line.split("例外", 1)[1]  # 只看例外条款本体
+    assert "isError=true" in exception_seg, "docs/MCP.md 例外条款丢失 isError=true 闸门"
+    assert "仅在" in exception_seg, "docs/MCP.md 例外条款丢失「仅在」限定"
+    assert exception_seg.index("isError=true") < exception_seg.index("缺少必需配置"), (
         "docs/MCP.md 闸门（isError=true）须出现在判据文案之前"
     )
     # instructions 第 5 条：同句共现（闸门 + 形状排除）
