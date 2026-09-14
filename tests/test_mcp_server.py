@@ -418,6 +418,20 @@ def test_config_missing_raises_toolerror(monkeypatch, caplog):
     # warning 留痕：静默吞没会让长驻进程"工具报错、服务端无痕"，排障无线索
     assert any("配置问题" in rec.message for rec in caplog.records)
 
+    # 协议级锚定：走 mcp.call_tool 全链路——raise ToolError 的分支若改回
+    # return str，此处不再抛错（isError 变 False，配置缺失被客户端当成功）。
+    # 框架把工具层 ToolError 包装为 "Error executing tool <name>: <原文>"
+    # 重新抛出（tools/base.py:207），最终由 server 层转 is_error=True 结果
+    # （server.py:441，ASGI 全链路实测）。
+    async def call_via_server():
+        # stdio 形态：ctx 非 None + headers=None（_ctx_of 替身——真实 Context
+        # 在 request_context 为 None 时访问 ctx.headers 会抛 ValueError）
+        return await mcp.call_tool("memory_get", {"number": 1}, _ctx_of(None))
+
+    with pytest.raises(ToolError, match="缺少必需配置：") as server_exc:
+        asyncio.run(call_via_server())
+    assert "Error executing tool memory_get" in str(server_exc.value)  # 框架包装形态
+
 
 def test_main_transport_cli_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """--transport CLI 参数优先于环境变量；非法 transport 报 SystemExit。"""

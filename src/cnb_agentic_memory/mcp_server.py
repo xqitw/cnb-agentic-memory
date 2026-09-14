@@ -178,7 +178,7 @@ async def _client(ctx: Context | None):
 
 
 def _tool_guard(fn):
-    """工具统一错误出口：MemoryRuleError/ConfigError 转为 {"error": ...} JSON 结果文本。
+    """工具统一错误出口：MemoryRuleError 转正常结果文本，ConfigError 转 ToolError（isError）。
 
     不加此出口，MemoryRuleError 穿透无捕获的工具被框架包成笼统的
     "Error executing tool ..."：调用方拿不到修复指引，
