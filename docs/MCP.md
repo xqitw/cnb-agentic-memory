@@ -196,7 +196,7 @@ async with httpx2.AsyncClient(headers=headers) as http_client:
 - **`memory_delete` 是软删除**：可随时 `memory_restore` 恢复；仅从默认检索与
   列表中隐藏，内容仍留在知识库向量中（`include_closed` 可召回），不是内容
   清除。修正/补充记忆请用 `memory_update`，删除仅用于真正废弃
-- **错误处理分两类，勿以 `isError` 判成功**：① **业务拒绝**（参数非法、写路径回读不一致、知识库不可用、`--require-headers` 拒绝匿名请求等）返回**正常结果**（`isError=false`），正文为 `{"error": "…"}` 且含行动指引，须按 `error` 字段存在性判别——尤其 `memory_write` 部分落盘时 `error` 字段携带已落盘分片编号，漏判会留孤儿分片；② **未捕获异常**（如 `ApiError`）为协议级 `isError=true`，文本被框架包装为笼统的 `Error executing tool <名称>`，状态码与原因只在服务端日志（`memory_search` 的知识库故障已在内层转为 ①，故其文本保留 CNB 原文；仓库未配置知识库流水线时 `memory_search` 会失败，错误文本提示可改用 `memory_keyword_search`，标题检索无需知识库）。**例外——配置缺失不要重试**：文案含「缺少必需配置」（凭据未提供或提供不齐，可能来自服务端环境变量或请求头，视部署形态而定）时，把缺失项清单转达给用户并等其完成配置后重试——不要猜测连接参数，不要编造或代填凭据
+- **错误处理分三类，勿以 `isError` 判成功**：① **业务拒绝**（语义层参数拒绝如 `state=all`/空检索词、写路径回读不一致、知识库不可用、`--require-headers` 拒绝匿名请求等）返回**正常结果**（`isError=false`），正文为 `{"error": "…"}` 且含行动指引，须按 `error` 字段存在性判别——尤其 `memory_write` 部分落盘时 `error` 字段携带已落盘分片编号，漏判会留孤儿分片；② **参数 Schema 校验拒绝 / 未知工具**（缺必填字段、类型错、工具名拼错）为 `isError=true`，正文即完整字段级明细（如 `validation error … Field required`），可直接改参重试；③ **未捕获异常**（如 `ApiError`）为 `isError=true`，文本被框架包装为笼统的 `Error executing tool <名称>`，状态码与原因只在服务端日志（`memory_search` 的知识库故障已在内层转为 ①，故其文本保留 CNB 原文；仓库未配置知识库流水线时 `memory_search` 会失败，错误文本提示可改用 `memory_keyword_search`，标题检索无需知识库）。**例外——配置缺失不要重试**：文案含「缺少必需配置」（凭据未提供或提供不齐，可能来自服务端环境变量或请求头，视部署形态而定）时，把缺失项清单转达给用户并等其完成配置后重试——不要猜测连接参数，不要编造或代填凭据
 
 ## 记忆仓库前置条件
 
