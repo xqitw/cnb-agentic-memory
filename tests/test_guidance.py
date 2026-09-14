@@ -109,11 +109,8 @@ def test_error_contract_gates_colocated() -> None:
     assert exception_seg.index("isError=true") < exception_seg.index("缺少必需配置"), (
         "docs/MCP.md 闸门（isError=true）须出现在判据文案之前"
     )
-    # 判据规范短语整段：主语「且正文**含「缺少必需配置：」」穿透 markdown 加粗；
-    # 锚整段短语而非裸子串——含→不包含/未含等任何否定语素替换、删主语均即红
-    assert _re.search(r"且正文\*{0,2}含「缺少必需配置：」", exception_seg), (
-        "docs/MCP.md 例外条款判据主语丢失或否定方向反转（须为「且正文含「缺少必需配置：」」）"
-    )
+    # 判据主语精确字面量（第十轮：正则前导字符法被 **不**含/不包含/且→或 同族穿透）
+    assert "且正文**含「缺少必需配置：」" in exception_seg, "docs/MCP.md 例外条款判据主语丢失或方向反转"
     assert "不含 `validation error` / `Unknown tool`" in exception_seg, (
         "docs/MCP.md 例外条款丢失排除形态（validation error / Unknown tool）"
     )
@@ -124,6 +121,12 @@ def test_error_contract_gates_colocated() -> None:
     assert "正文含 `validation error`" in mcp_doc, (
         "docs/MCP.md ② 正向判据口径被改（须为宽口径 validation error，单复数通吃）"
     )
+    # ① 判据口径整段锚点（第十轮锐鉴：顶层 JSON error 键 改成 文本子串查找不报警）
+    assert "顶层 JSON 的 `error` 键" in mcp_doc, (
+        "docs/MCP.md ① 判据口径被改（须为顶层 JSON 的 error 键，非子串查找）"
+    )
+    # docs ③ 无明细锚点（第十轮锐鉴：无明细 改 含明细 方向反转不报警）
+    assert "③ 无明细" in mcp_doc, "docs/MCP.md ③ 明细方向反转（真实形态为无明细）"
     # instructions 第 5 条：定位加固（split("5.") 在「五、」时退化为全文——
     # 改用正则锚定行首编号，退化即断言失败而非静默变绿）
     instructions = mcp_server.mcp.instructions or ""
@@ -133,15 +136,17 @@ def test_error_contract_gates_colocated() -> None:
     assert "缺少必需配置" in rule5, "instructions 第 5 条判据丢失"
     assert "isError=true" in rule5, "instructions 第 5 条丢失 isError=true 闸门"
     assert rule5.index("isError=true") < rule5.index("缺少必需配置"), "instructions 闸门须出现在判据文案之前"
-    # 判据规范短语整段（主语正向 + 排除槽整段，与 docs 侧同款）
-    assert "正文含「缺少必需配置：」" in rule5, "instructions 第 5 条判据主语丢失或否定方向反转"
-    assert "不含 validation error" in rule5, "instructions 第 5 条否定词反转（排除项被改为命中）"
-    # 排除槽整段规范短语（第九轮：删槽位内 Unknown tool 后裸子串仍被后文命中）
-    assert "不含 validation error / Unknown tool:" in rule5, (
-        "instructions 第 5 条排除槽丢失 Unknown tool:（删槽位/加尾缀即红）"
-    )
+    # 判据主语精确字面量（第十轮：同 docs 侧，堵同族否定写法与连接词放宽）
+    assert "且正文含「缺少必需配置：」" in rule5, "instructions 第 5 条判据主语丢失或方向反转"
+    assert "且不含 validation error" in rule5, "instructions 第 5 条否定词反转（排除项被改为命中）"
+    # 排除条款整句锚点（第十轮：rule5 里 Unknown tool: 出现 2 次，裸子串被说明文字喂饱）
+    assert "且不含 validation error / Unknown tool: 时" in rule5, "instructions 第 5 条排除条款被删或弱化"
     # 宽口径措辞锚点（第九轮：单数或复数 被撤销即回退单数硬计数）
     assert "单数或复数" in rule5, "instructions 第 5 条丢失宽口径措辞（单数或复数）"
+    # 末句方向锚点（第十轮锐鉴：isError=false 改 isError=true 方向反转不报警）
+    assert "isError=false 的成功结果" in rule5, (
+        "instructions 第 5 条末句方向反转（须为 isError=false 的成功结果）"
+    )
     # 旧形态禁用
     assert "以「缺少必需配置：」开头" not in rule5, "instructions 第 5 条回退为旧 startswith 形态"
 
@@ -211,23 +216,17 @@ def test_error_contract_mutation_guards() -> None:
             "Error executing tool memory_get: 1 validation error for memory_getArguments [input_value=缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN]",
             "param",
         ),
-        # ① 顶层键判据反例：成功结果的 body 值内嵌 "error" 字面量（文档已言明的形态）——
-        # 窗口/全文子串查找误判 business，只有顶层键判据能正确判 success
-        (
-            "①body内嵌error字面量",
-            False,
-            '{"number": 3, "title": "t", "body": "前置 {\\"error\\": \\"写路径回读校验失败\\"} 结尾"}',
-            "success",
-        ),
+        # ① 顶层键判据反例：非顶层嵌套（子串/递归查找两类退化形态均误判 business，
+        # 只有 json.loads 顶层键判据能正确判 success——第十轮：75 字符样本在 200 窗口内无判别力）
+        ("①error非顶层", False, '{"data": {"error": "state 仅支持 open/closed"}}', "success"),
     ]
-    # 样本存在性断言（第九轮：删样本/组合回退全绿——样本集自身必须被守护）
-    texts = "\n".join(text for _, _, text, _ in cases)
-    assert "1 validation error" in texts, "② 单数样本被删（单字段错误形态失去锁定）"
-    assert "validation errors for" in texts, "② 复数样本被删（多字段错误形态失去锁定，第七轮修复静默退化）"
-    assert "Unknown tool:" in texts, "② 未知工具样本被删"
-    assert "缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN" in texts, "配置缺失样本被删"
-    case_3 = next(text for name, _, text, _ in cases if name == "③未捕获异常")
-    assert case_3 == "Error executing tool memory_get", (
+    # 样本存在性断言（第十轮：拼接串裸子串被邻样本喂饱——改按用例名精确取值）
+    by_name = {name: text for name, _, text, _ in cases}
+    assert "1 validation error" in by_name["②Schema校验"], "② 单数样本被删或形态漂移"
+    assert "validation errors for" in by_name["②多字段校验"], "② 复数样本被删或形态漂移（第七轮修复静默退化）"
+    assert "Unknown tool:" in by_name["②未知工具"], "② 未知工具样本被删或形态漂移"
+    assert "缺少必需配置：" in by_name["配置缺失"], "配置缺失样本被删或形态漂移"
+    assert by_name["③未捕获异常"] == "Error executing tool memory_get", (
         "③ 无明细样本形态漂移（框架真实形态为无明细的 Error executing tool <名称>）"
     )
 
