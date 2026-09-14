@@ -11,9 +11,11 @@ import asyncio
 import re
 from pathlib import Path
 
+import pytest
+
 from cnb_agentic_memory import mcp_server
 
-# instructions 必须包含的原则锚点（恢复阶梯 / 向量库残留 / 知识库时延 / body 语义）
+# instructions 必须包含的原则锚点（恢复阶梯 / 向量库残留 / 知识库时延 / body 语义 / 配置缺失指引）
 INSTRUCTIONS_ANCHORS = [
     "memory_update",
     "软删除",
@@ -21,6 +23,7 @@ INSTRUCTIONS_ANCHORS = [
     "定时入库",
     "回查",
     "memory_get",
+    "不要猜测连接参数",
 ]
 
 # 工具名 → 描述必须包含的语义锚点
@@ -58,8 +61,32 @@ def test_tool_descriptions_contains_semantic_anchors() -> None:
 def test_skill_md_contains_core_semantics() -> None:
     """SKILL.md（skill 通道）必须包含核心语义锚点（AGENTS.md 同步点 1）。"""
     skill = Path("skills/cnb-agentic-memory/SKILL.md").read_text(encoding="utf-8")
-    for anchor in ["知识库向量", "update", "不回显正文", "逗号", "回查"]:
+    for anchor in ["知识库向量", "update", "不回显正文", "逗号", "回查", "不要猜测连接参数"]:
         assert anchor in skill, f"SKILL.md 缺少锚点：{anchor}"
+
+
+def test_config_error_runtime_message_carries_guidance() -> None:
+    """运行时 str(ConfigError) 必须携带行动指引（SKILL.md/MCP 判据的三方同源）。
+
+    断言运行时消息而非整文件文本——整文件断言可被 docstring 喂饱，
+    文案搬进注释后防漂移即失效。SKILL.md 与 MCP 出口的判据都绑
+    「缺少必需配置：」字面量，此锚点保证改 api.py 文案时同步报警。
+    """
+    import os
+
+    saved = {k: os.environ.pop(k, None) for k in ("CNB_AGENTIC_MEMORY_TOKEN", "CNB_AGENTIC_MEMORY_REPO")}
+    try:
+        from cnb_agentic_memory import ConfigError
+
+        with pytest.raises(ConfigError) as exc_info:
+            from cnb_agentic_memory.api import CNBApiClient
+
+            CNBApiClient()
+        message = str(exc_info.value)
+        for anchor in ["缺少必需配置：", "CNB_AGENTIC_MEMORY_TOKEN", "CNB_AGENTIC_MEMORY_REPO"]:
+            assert anchor in message, f"ConfigError 运行时文案缺少锚点：{anchor}"
+    finally:
+        os.environ.update({k: v for k, v in saved.items() if v is not None})
 
 
 def test_memory_error_contains_recovery_ladder() -> None:

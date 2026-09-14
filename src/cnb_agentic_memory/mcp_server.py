@@ -4,7 +4,7 @@
 - 薄适配层：工具与 Memory 方法一一对应，业务逻辑（两步写入/回读校验/
   title 不变量/超长拆分/软删除）全部在 SDK 层
 - 工具描述内嵌使用指导（title 撰写规范等），供智能体理解调用方式
-- 错误处理：ApiError/MemoryRuleError 转为带错误说明的结果文本（isError），
+- 错误处理：ApiError/MemoryRuleError/ConfigError 转为带错误说明的结果文本（isError），
   不包装语义，智能体收到后自行决策重试或降级
 - 配置优先级：请求头（X-CNB-Token/X-CNB-Repo/X-CNB-Base-URL，多用户共享部署时
   每请求覆盖）> CNB_AGENTIC_MEMORY_ 环境变量；stdio 下无请求头，自然回落环境变量
@@ -16,6 +16,7 @@ import argparse
 import functools
 import ipaddress
 import json
+import logging
 import sys
 from contextlib import asynccontextmanager
 from email.message import Message
@@ -27,8 +28,15 @@ from mcp.server.mcpserver.context import Context
 from mcp.server.transport_security import TransportSecuritySettings
 
 from . import __version__
-from .api import SharedClientPool, env, resolve_overrides_from_headers
+from .api import (
+    ConfigError,
+    SharedClientPool,
+    env,
+    resolve_overrides_from_headers,
+)
 from .memory import Memory, MemoryRuleError, SearchResult, WriteResult
+
+logger = logging.getLogger(__name__)
 
 _DIST_NAME = "cnb-agentic-memory"  # PyPI 发行名（pyproject [project].name 同源）
 
@@ -119,7 +127,10 @@ mcp = MCPServer(
         "（实时或定时入库，如每小时/每日），且受网络、记忆数量影响，"
         "检索不到不是写入失败；需立即确认时用 memory_get 按 number 回查。\n"
         "4. memory_list / memory_keyword_search 不回显正文（body 为 null），"
-        "需要全文用 memory_get。"
+        "需要全文用 memory_get。\n"
+        "5. 配置缺失（环境变量 CNB_AGENTIC_MEMORY_TOKEN / CNB_AGENTIC_MEMORY_REPO "
+        "未配置）时工具返回携带行动指引的错误 JSON：把缺失的环境变量清单转达给"
+        "用户，由用户完成配置后重试——不要猜测连接参数，不要编造或代填凭据。"
     ),
 )
 
@@ -165,13 +176,18 @@ async def _client(ctx: Context | None):
 
 
 def _tool_guard(fn):
-    """工具统一错误出口：MemoryRuleError 转为 {"error": ...} JSON 结果文本。
+    """工具统一错误出口：MemoryRuleError/ConfigError 转为 {"error": ...} JSON 结果文本。
 
     不加此出口，MemoryRuleError 穿透无捕获的工具被框架包成笼统的
     "Error executing tool ..."：调用方拿不到修复指引，
     且每次匿名探测都打 ERROR 级故障栈。--require-headers 的拒绝
     （凭据头不齐）是可预期的业务拒绝，与 memory_write 既有错误形状
     同源，客户端收到后自行决策补凭据头重试。
+
+    ConfigError（环境变量未配置/非法）同理：文案自带行动指引（缺哪些
+    变量、转达用户配置，api.py _validate_config 单一来源），捕获后转
+    {"error": ...} 可读 JSON 并打 warning 留痕——静默吞没会让长驻进程
+    出现"工具返回错误 JSON、服务端无痕"的隐蔽故障，排障无线索。
     """
 
     @functools.wraps(fn)
@@ -179,6 +195,9 @@ def _tool_guard(fn):
         try:
             return await fn(*args, **kwargs)
         except MemoryRuleError as err:
+            return json.dumps({"error": str(err)}, ensure_ascii=False)
+        except ConfigError as err:
+            logger.warning("工具调用因配置缺失被拒：%s", err)
             return json.dumps({"error": str(err)}, ensure_ascii=False)
 
     return wrapper
