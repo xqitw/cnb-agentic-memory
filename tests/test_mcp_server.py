@@ -392,29 +392,31 @@ def test_keyword_search_rejects_empty(monkeypatch):
     assert "检索词不能为空" in result
 
 
-def test_config_missing_returns_guidance_json(monkeypatch, caplog):
-    """配置缺失走 _tool_guard 统一出口：可读 JSON 指引 + warning 留痕。
+def test_config_missing_raises_toolerror(monkeypatch, caplog):
+    """配置缺失走 _tool_guard 出口：raise ToolError（协议级 isError）+ warning 留痕。
 
-    不加出口时 ConfigError 穿透被框架包成笼统 "Error executing tool ..."，
-    客户端拿不到「缺少必需配置：」判据字面量（SKILL.md/MCP 文案判据
-    三方同源，见 tests/test_guidance.py 运行时锚点）。
+    框架对 ToolError 返回 is_error=True + 全文 content（server.py 实测）——
+    若返回裸 str 则 isError 为 False，配置缺失被客户端当成功。文案与
+    SKILL.md/CLI 判据三方同源（见 tests/test_guidance.py 运行时锚点）。
     """
     import asyncio
-    import json as json_mod
+
+    from mcp.server.mcpserver.exceptions import ToolError
 
     monkeypatch.delenv("CNB_AGENTIC_MEMORY_TOKEN", raising=False)
     monkeypatch.delenv("CNB_AGENTIC_MEMORY_REPO", raising=False)
 
     tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "memory_get")
     with caplog.at_level("WARNING", logger=mcp_server.__name__):
-        result = asyncio.run(tool.fn(number=1))
+        with pytest.raises(ToolError) as exc_info:
+            asyncio.run(tool.fn(number=1))
 
-    parsed = json_mod.loads(result)
-    assert "缺少必需配置：" in parsed["error"]
-    assert "CNB_AGENTIC_MEMORY_TOKEN" in parsed["error"]
-    assert "CNB_AGENTIC_MEMORY_REPO" in parsed["error"]
+    message = str(exc_info.value)
+    assert "缺少必需配置：" in message
+    assert "CNB_AGENTIC_MEMORY_TOKEN" in message
+    assert "CNB_AGENTIC_MEMORY_REPO" in message
     # warning 留痕：静默吞没会让长驻进程"工具报错、服务端无痕"，排障无线索
-    assert any("配置缺失" in rec.message for rec in caplog.records)
+    assert any("配置问题" in rec.message for rec in caplog.records)
 
 
 def test_main_transport_cli_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:

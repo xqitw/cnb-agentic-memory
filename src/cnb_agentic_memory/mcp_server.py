@@ -4,8 +4,9 @@
 - 薄适配层：工具与 Memory 方法一一对应，业务逻辑（两步写入/回读校验/
   title 不变量/超长拆分/软删除）全部在 SDK 层
 - 工具描述内嵌使用指导（title 撰写规范等），供智能体理解调用方式
-- 错误处理：ApiError/MemoryRuleError/ConfigError 转为带错误说明的结果文本（isError），
-  不包装语义，智能体收到后自行决策重试或降级
+- 错误处理：ApiError 抛给框架转 isError 结果；MemoryRuleError 转为
+  {"error": ...} 正常结果文本；ConfigError 转 ToolError（协议级 isError），
+  均不包装语义，智能体收到后自行决策重试或降级
 - 配置优先级：请求头（X-CNB-Token/X-CNB-Repo/X-CNB-Base-URL，多用户共享部署时
   每请求覆盖）> CNB_AGENTIC_MEMORY_ 环境变量；stdio 下无请求头，自然回落环境变量
 """
@@ -25,6 +26,7 @@ from typing import Any, cast
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.context import Context
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 
 from . import __version__
@@ -128,9 +130,9 @@ mcp = MCPServer(
         "检索不到不是写入失败；需立即确认时用 memory_get 按 number 回查。\n"
         "4. memory_list / memory_keyword_search 不回显正文（body 为 null），"
         "需要全文用 memory_get。\n"
-        "5. 配置缺失（环境变量 CNB_AGENTIC_MEMORY_TOKEN / CNB_AGENTIC_MEMORY_REPO "
-        "未配置）时工具返回携带行动指引的错误 JSON：把缺失的环境变量清单转达给"
-        "用户，由用户完成配置后重试——不要猜测连接参数，不要编造或代填凭据。"
+        "5. 工具返回配置缺失类错误（文案含「缺少必需配置」）时：凭据只能来自"
+        "用户、调用方配置或请求头（视部署形态），把缺失项清单转达给用户并等其"
+        "完成配置后重试——不要猜测连接参数，不要编造或代填凭据。"
     ),
 )
 
@@ -184,10 +186,11 @@ def _tool_guard(fn):
     （凭据头不齐）是可预期的业务拒绝，与 memory_write 既有错误形状
     同源，客户端收到后自行决策补凭据头重试。
 
-    ConfigError（环境变量未配置/非法）同理：文案自带行动指引（缺哪些
-    变量、转达用户配置，api.py _validate_config 单一来源），捕获后转
-    {"error": ...} 可读 JSON 并打 warning 留痕——静默吞没会让长驻进程
-    出现"工具返回错误 JSON、服务端无痕"的隐蔽故障，排障无线索。
+    ConfigError（配置缺失/非法）同理：文案自带行动指引（缺哪些变量、
+    转达用户配置，api.py _validate_config 单一来源），捕获后打 warning
+    留痕（防长驻进程排障无痕），再 raise ToolError 透传——框架对
+    ToolError 返回 is_error=True + 全文 content（日志仅 INFO 无故障栈），
+    以 isError 判别失败的客户端不会把配置缺失误当成功。不吞。
     """
 
     @functools.wraps(fn)
@@ -197,8 +200,8 @@ def _tool_guard(fn):
         except MemoryRuleError as err:
             return json.dumps({"error": str(err)}, ensure_ascii=False)
         except ConfigError as err:
-            logger.warning("工具调用因配置缺失被拒：%s", err)
-            return json.dumps({"error": str(err)}, ensure_ascii=False)
+            logger.warning("工具调用因配置问题被拒：%s", err)
+            raise ToolError(str(err)) from err
 
     return wrapper
 
