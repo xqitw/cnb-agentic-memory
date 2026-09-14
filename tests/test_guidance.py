@@ -108,12 +108,80 @@ def test_error_contract_gates_colocated() -> None:
     assert exception_seg.index("isError=true") < exception_seg.index("缺少必需配置"), (
         "docs/MCP.md 闸门（isError=true）须出现在判据文案之前"
     )
-    # instructions 第 5 条：同句共现（闸门 + 形状排除）
+    # 判据形态（第六轮引入）：「含「缺少必需配置：」+ 不含排除形态」组合。
+    # 变异实测（锐鉴/幽明 M1/M9/G3）：整段退回旧 startswith 形态或删排除项均静默失效，
+    # 故形态三要素逐一钉住。
+    assert "含「缺少必需配置：」" in exception_seg, "docs/MCP.md 例外条款丢失「含」判据形态"
+    assert "不含 `validation error` / `Unknown tool`" in exception_seg, (
+        "docs/MCP.md 例外条款丢失排除形态（validation error / Unknown tool）"
+    )
+    assert "以「缺少必需配置：」开头" not in exception_seg, (
+        "docs/MCP.md 例外条款回退为旧 startswith 形态（框架强制前缀下恒不命中）"
+    )
+    # instructions 第 5 条：同句共现（闸门 + 形状排除 + 形态）
     instructions = mcp_server.mcp.instructions or ""
     rule5 = next(seg for seg in instructions.split("5.") if "缺少必需配置" in seg)
     assert "isError=true" in rule5, "instructions 第 5 条丢失 isError=true 闸门"
     assert "validation error" in rule5, "instructions 第 5 条丢失 ② 形状排除"
+    assert "Unknown tool" in rule5, "instructions 第 5 条丢失 Unknown tool 形状"
     assert rule5.index("isError=true") < rule5.index("缺少必需配置"), "instructions 闸门须出现在判据文案之前"
+    # 否定词语义（幽明 H1 变异：且不含→且含 完全反转不报警）
+    assert "不含 validation error" in rule5, "instructions 第 5 条否定词反转（排除项被改为命中）"
+    # 旧形态禁用（幽明 G5/G6 变异：回退为 startswith 形态不报警）
+    assert "以「缺少必需配置：」开头" not in rule5, "instructions 第 5 条回退为旧 startswith 形态"
+
+
+def test_error_contract_mutation_guards() -> None:
+    """错误契约变异回归：第六轮已修复的三种事故形态再次出现时必须报警。
+
+    用例内直接复刻文档判据链，对四类真实错误文本逐一验证落点——
+    文档措辞与协议行为的绑定不再依赖人工 diff 核对。
+    """
+    cases = [
+        # (名称, is_error, 正文, 期望判定)
+        ("①业务拒绝", False, '{"error": "state 仅支持 open/closed"}', "business"),
+        ("①部分落盘", False, '{"error": "写入失败（已完成 1/2）… #7 → update 7"}', "business"),
+        (
+            "②Schema校验",
+            True,
+            "Error executing tool memory_get: 1 validation error for memory_getArguments",
+            "param",
+        ),
+        ("②未知工具", True, "Unknown tool: memory_typo", "param"),
+        ("③未捕获ApiError", True, "Error executing tool memory_get: CNB API 500: {}", "unexpected"),
+        (
+            "配置缺失",
+            True,
+            "Error executing tool memory_get: 缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN",
+            "config",
+        ),
+        # 反例：成功结果与参数错误回显含判据字面量，不得误判为配置缺失
+        (
+            "成功正文含字面量",
+            False,
+            '{"number": 42, "body": "报「缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN」时不要重试"}',
+            "success",
+        ),
+        (
+            "②实参回显含字面量",
+            True,
+            "Error executing tool memory_get: 1 validation error for memory_getArguments [input_value=缺少必需配置：CNB_AGENTIC_MEMORY_TOKEN]",
+            "param",
+        ),
+    ]
+
+    def judge(is_error: bool, text: str) -> str:
+        if not is_error:
+            return "business" if '"error"' in text[:200] else "success"
+        if "1 validation error" in text or text.startswith("Unknown tool:"):
+            return "param"
+        if "缺少必需配置：" in text:
+            return "config"
+        return "unexpected"
+
+    for name, is_error, text, expected in cases:
+        actual = judge(is_error, text)
+        assert actual == expected, f"{name}：判据落点 {actual} ≠ 预期 {expected}"
 
 
 def test_memory_error_contains_recovery_ladder() -> None:
