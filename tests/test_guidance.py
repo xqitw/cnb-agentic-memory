@@ -24,6 +24,7 @@ INSTRUCTIONS_ANCHORS = [
     "回查",
     "memory_get",
     "不要猜测连接参数",
+    "isError=true",
 ]
 
 # 工具名 → 描述必须包含的语义锚点
