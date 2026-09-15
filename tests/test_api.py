@@ -190,6 +190,7 @@ CREDENTIAL_OR_MALFORMED_BASE_URLS = [
     "https://xn--a",  # 畸形 A-label：host 属性抛 IDNA 异常，须在 try 内统一转 ConfigError
     "https://xn--SECRET-pw",  # 同上，且标签含凭据
     "https://xn--a?token=SECRET",  # 畸形 A-label × query 凭据：字面判据须前置于 host 求值
+    "https://xn--SECRET-ta.cool",  # IDNA 文案解出明文标签的形态——回显复活时此用例必红
     "https:///u:SECRET@h.cool",  # 三斜杠空 host：userinfo 被吞进 path，原文随请求 URL 入日志
     "https:////u:SECRET@h.cool",  # 四斜杠同族
     "https:///",  # 纯空 host
