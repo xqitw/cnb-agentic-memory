@@ -360,6 +360,10 @@ class CNBApiClient:
             raise ConfigError(
                 "base_url 不是合法的 URL 形态（含无法解析的端口或主机字符），请修正后重试"
             ) from None
+        if not parsed.host:
+            # 空 host 族（https:///u:pw@h.cool 等）：userinfo 被吞进 path，
+            # userinfo 判据为空但凭据原文随请求 URL 进入 httpx 日志
+            raise ConfigError("base_url 缺少主机名（host）——请提供形如 https://<host> 的地址")
         if parsed.userinfo:
             # userinfo 判据（解析属性）替代字面 @：path 中的 @ 不误诊；
             # 实测编码/变体分隔符均不会解析出 userinfo，判据对凭据形态完备

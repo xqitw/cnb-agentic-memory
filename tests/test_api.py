@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import traceback
+
 import httpx
 import pytest
 import respx
@@ -183,6 +185,9 @@ CREDENTIAL_OR_MALFORMED_BASE_URLS = [
     "https://u:SECRET＠h.cool",  # 全角 @（同为非法端口形态）
     "https://u:p%40ss.host",  # 编码 @ 在口令（非法端口形态）
     "https://api.cnb.cool?token=SECRET",  # query 携带凭据（httpx 日志明文输出 URL）
+    "https:///u:SECRET@h.cool",  # 三斜杠空 host：userinfo 被吞进 path，原文随请求 URL 入日志
+    "https:////u:SECRET@h.cool",  # 四斜杠同族
+    "https:///",  # 纯空 host
     "//h.cool",  # 无 scheme
     "///h.cool",  # 无 scheme 多斜杠
     "h.cool",  # 裸主机名
@@ -204,8 +209,10 @@ def test_credential_or_malformed_base_url_rejected_without_echo(
     assert SECRET_MARKER not in str(exc_info.value)
     assert probe not in str(exc_info.value)
     assert SECRET_MARKER not in caplog.text
-    # 解析失败的原异常不链入（__cause__ 文案自带原文，链入 DEBUG traceback 即回显）
-    assert exc_info.value.__cause__ is None
+    # 解析失败的原异常不链入：有隐式上下文链（裸 raise in except）必须已抑制
+    # （__cause__ 对「删除 from None」无辨别力——评审实测隐式链的 traceback 带原文）
+    assert exc_info.value.__context__ is None or exc_info.value.__suppress_context__ is True
+    assert SECRET_MARKER not in "".join(traceback.format_exception(exc_info.value))
     # httpx 未被触达：凭据 URL 永不进入 httpx，其请求日志泄露面不可达
     assert "HTTP Request" not in caplog.text
 
