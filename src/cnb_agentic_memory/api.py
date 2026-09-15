@@ -372,8 +372,10 @@ class CNBApiClient:
                 "CNB API 认证走 Bearer Token（CNB_AGENTIC_MEMORY_TOKEN），"
                 "请去除 URL 中的用户信息后重试"
             )
-        if parsed.query or parsed.fragment:
-            # query/fragment 同样随请求 URL 进入 httpx 日志，凭据可经此携带
+        if "?" in self.base_url or "#" in self.base_url:
+            # query/fragment 同样随请求 URL 进入 httpx 日志，凭据可经此携带；
+            # 字面判据而非解析属性——尾随空 ?/# 解析后为空但字面真实存在，
+            # 放行会把 /{repo}/-/{suffix} 吞进 query，请求打到错误路径
             raise ConfigError(
                 "base_url 不允许携带查询串或片段（?query/#fragment）——请仅保留协议与主机部分（可含路径）"
             )

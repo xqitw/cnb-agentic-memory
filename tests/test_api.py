@@ -185,6 +185,8 @@ CREDENTIAL_OR_MALFORMED_BASE_URLS = [
     "https://u:SECRET＠h.cool",  # 全角 @（同为非法端口形态）
     "https://u:p%40ss.host",  # 编码 @ 在口令（非法端口形态）
     "https://api.cnb.cool?token=SECRET",  # query 携带凭据（httpx 日志明文输出 URL）
+    "https://api.cnb.cool?",  # 尾随空 ?：解析属性为空但字面存在，请求路径被吞进 query
+    "https://h.cool#SECRET",  # fragment 携带凭据
     "https:///u:SECRET@h.cool",  # 三斜杠空 host：userinfo 被吞进 path，原文随请求 URL 入日志
     "https:////u:SECRET@h.cool",  # 四斜杠同族
     "https:///",  # 纯空 host
