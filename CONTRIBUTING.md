@@ -70,7 +70,7 @@ npx markdownlint-cli2 '**/*.md'
 ## 分支与发布
 
 - 开发在短生命周期分支进行，main 分支通过 PR 合并（保护分支）
-- 评审流程约定（阻塞判定、潜伏问题转 issue、设计岔路口先对齐）见 [AGENTS.md](./AGENTS.md)
+- 评审流程约定（阻塞判定、潜伏问题转 issue、设计岔路口先对齐、修复引入回归单独标注）见 [AGENTS.md](./AGENTS.md)
 - 打 tag（`v*`）触发 CI：测试 → 发布 PyPI → code-wiki → git release
 
 ## 测试注意事项

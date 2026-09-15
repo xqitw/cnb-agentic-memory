@@ -74,6 +74,7 @@ include = [
     "tests",
     "docs",
     "skills",
+    "AGENTS.md",
     "README.md",
     "LICENSE",
     "CONTRIBUTING.md",
