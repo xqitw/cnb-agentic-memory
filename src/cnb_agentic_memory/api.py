@@ -355,9 +355,10 @@ class CNBApiClient:
                 "（CNB_AGENTIC_MEMORY_BASE_URL / X-CNB-Base-URL），请修正后重试"
             )
         if "?" in self.base_url or "#" in self.base_url:
-            # 前置于 httpx.URL()：纯字符串判据不依赖解析，且必须先于 host 求值——
-            # host 属性对畸形 A-label（https://xn--a 等）会抛 IDNA 异常，后置时
-            # 该判据永不执行，https://xn--a?token=SECRET 整族凭据形态逃逸
+            # 前置于 httpx.URL()：纯字符串判据不依赖解析。安全边界由下方 host
+            # 求值入 try 保证（畸形 A-label 同样转 ConfigError）；本块前置的
+            # 价值是错误分类稳定——畸形宿主下的 ?/# 凭据形态走 query/fragment
+            # 语义拒绝，而非笼统的「URL 形态不合法」
             raise ConfigError(
                 "base_url 不允许携带查询串或片段（?query/#fragment）——请仅保留协议与主机部分（可含路径）"
             )
