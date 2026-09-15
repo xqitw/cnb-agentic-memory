@@ -354,13 +354,21 @@ class CNBApiClient:
                 "base_url 必须以 http:// 或 https:// 开头"
                 "（CNB_AGENTIC_MEMORY_BASE_URL / X-CNB-Base-URL），请修正后重试"
             )
+        if "?" in self.base_url or "#" in self.base_url:
+            # 前置于 httpx.URL()：纯字符串判据不依赖解析，且必须先于 host 求值——
+            # host 属性对畸形 A-label（https://xn--a 等）会抛 IDNA 异常，后置时
+            # 该判据永不执行，https://xn--a?token=SECRET 整族凭据形态逃逸
+            raise ConfigError(
+                "base_url 不允许携带查询串或片段（?query/#fragment）——请仅保留协议与主机部分（可含路径）"
+            )
         try:
             parsed = httpx.URL(self.base_url)
+            host = parsed.host  # host 属性触发 IDNA 解码，畸形标签统一在此转 ConfigError
         except Exception:
             raise ConfigError(
                 "base_url 不是合法的 URL 形态（含无法解析的端口或主机字符），请修正后重试"
             ) from None
-        if not parsed.host:
+        if not host:
             # 空 host 族（https:///u:pw@h.cool 等）：userinfo 被吞进 path，
             # userinfo 判据为空但凭据原文随请求 URL 进入 httpx 日志
             raise ConfigError("base_url 缺少主机名（host）——请提供形如 https://<host> 的地址")
@@ -371,13 +379,6 @@ class CNBApiClient:
                 "base_url 不允许包含凭据段（userinfo @ 形式）——"
                 "CNB API 认证走 Bearer Token（CNB_AGENTIC_MEMORY_TOKEN），"
                 "请去除 URL 中的用户信息后重试"
-            )
-        if "?" in self.base_url or "#" in self.base_url:
-            # query/fragment 同样随请求 URL 进入 httpx 日志，凭据可经此携带；
-            # 字面判据而非解析属性——尾随空 ?/# 解析后为空但字面真实存在，
-            # 放行会把 /{repo}/-/{suffix} 吞进 query，请求打到错误路径
-            raise ConfigError(
-                "base_url 不允许携带查询串或片段（?query/#fragment）——请仅保留协议与主机部分（可含路径）"
             )
 
     def _path(self, suffix: str) -> str:
