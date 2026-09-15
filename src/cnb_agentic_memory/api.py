@@ -319,18 +319,25 @@ class CNBApiClient:
         await self.close()
 
     def __repr__(self) -> str:
-        """收敛 repr：token 仅呈现摘要前 8 字符——池条目长期驻留进程内，
-        dump/诊断输出不得携带明文凭据。"""
+        """收敛 repr：token 仅呈现摘要前 8 字符；base_url 一律不回显——
+
+        含凭据形态的 base_url 即便被 _validate_config 拒绝，repr 仍会被
+        异常路径/调试器/池日志（如 aclose 的 %r 留痕）携带，故字段级移除，
+        不做「回显剥离后 host」（host 提取需解析任意畸形字符串，重开攻防面）。
+        定位由 repo + token 摘要 + timeout 足够。
+        """
         token_head = hashlib.sha256(self.token.encode()).hexdigest()[:8] if self.token else "<empty>"
-        return (
-            f"CNBApiClient(repo={self.repo!r}, base_url={self.base_url!r}, "
-            f"token=sha256:{token_head}, timeout={self.timeout!r})"
-        )
+        return f"CNBApiClient(repo={self.repo!r}, token=sha256:{token_head}, timeout={self.timeout!r})"
 
     # ---- 内部 ----
 
     def _validate_config(self) -> None:
-        """构造时前置校验配置完整性，给出可操作的提示（而非请求时才炸）。"""
+        """构造时前置校验配置完整性与 base_url 形态，给出可操作的提示（而非请求时才炸）。
+
+        base_url 校验只描述原因、不回显原值（错误文案与日志一律不回显 base_url，
+        实测含 userinfo 的 URL 经 httpx 自动转 Basic 认证头发往任意主机，
+        CNB API 认证走 Bearer Token，userinfo 形态永远不合法）。
+        """
         missing = []
         if not self.token:
             missing.append("CNB_AGENTIC_MEMORY_TOKEN（CNB API 令牌）")
@@ -338,6 +345,21 @@ class CNBApiClient:
             missing.append("CNB_AGENTIC_MEMORY_REPO（记忆仓库 slug，如 group/memory）")
         if missing:
             raise ConfigError("缺少必需配置：" + "、".join(missing))
+        if not self.base_url.startswith(("http://", "https://")):
+            # 前缀规则确定性拦截带引号/全角冒号/单斜杠/无 scheme 等畸形形态，
+            # 不做形态枚举（实测 httpx.URL 下多数畸形并不抛异常，枚举不可收敛）
+            raise ConfigError(
+                "base_url 必须以 http:// 或 https:// 开头"
+                "（CNB_AGENTIC_MEMORY_BASE_URL / X-CNB-Base-URL），请修正后重试"
+            )
+        if "@" in self.base_url:
+            # 单一 @ 规则覆盖一切 userinfo 形态（含密码带 @、base64 风格口令等），
+            # 拒绝而非剥离：凭据 URL 永不进入 httpx，其请求日志的明文密码泄露面不可达
+            raise ConfigError(
+                "base_url 不允许包含凭据段（userinfo @ 形式）——"
+                "CNB API 认证走 Bearer Token（CNB_AGENTIC_MEMORY_TOKEN），"
+                "请去除 URL 中的用户信息后重试"
+            )
 
     def _path(self, suffix: str) -> str:
         """拼接 API 路径：/{repo}/-/{suffix}。"""

@@ -168,6 +168,66 @@ def test_missing_config_raises_config_error(monkeypatch: pytest.MonkeyPatch) -> 
         CNBApiClient(token="t", repo="")
 
 
+# 固定密码标记：断言其在任何错误文案/日志/repr 中零出现
+SECRET_MARKER = "sup3r-secret-marker"
+
+# #100 验收清单：畸形/凭据形态逐一作 base_url，全部应被构造期拒绝
+CREDENTIAL_OR_MALFORMED_BASE_URLS = [
+    "https://u:SECRET@h.cool",  # 正常形态含凭据
+    '"https://u:SECRET@h.cool"',  # 带引号（.env/YAML 复制粘贴常见）
+    "https：//u:SECRET@h.cool",  # 全角冒号
+    "https:/u:SECRET@h.cool",  # 单斜杠
+    "https://u:p@ss@h.cool",  # 密码含 @
+    "https://u:cy1zZWNyZXQ=@h.cool",  # base64 风格口令
+    "//h.cool",  # 无 scheme
+    "///h.cool",  # 无 scheme 多斜杠
+    "h.cool",  # 裸主机名
+]
+
+
+@pytest.mark.parametrize("base_url", CREDENTIAL_OR_MALFORMED_BASE_URLS)
+def test_credential_or_malformed_base_url_rejected_without_echo(
+    base_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """含凭据/畸形 base_url 构造期拒绝，且值不回显进任何错误文案与日志。"""
+    from cnb_agentic_memory import ConfigError
+
+    probe = base_url.replace("SECRET", SECRET_MARKER)
+    with caplog.at_level("DEBUG"):
+        with pytest.raises(ConfigError) as exc_info:
+            CNBApiClient(token="t", repo="g/r", base_url=probe)
+    # 值零回显：错误文案与捕获日志（含 httpx logger）均不得出现密码标记与原文
+    assert SECRET_MARKER not in str(exc_info.value)
+    assert probe not in str(exc_info.value)
+    assert SECRET_MARKER not in caplog.text
+    # httpx 未被触达：凭据 URL 永不进入 httpx，其请求日志泄露面不可达
+    assert "HTTP Request" not in caplog.text
+
+
+def test_repr_omits_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """repr 不含 base_url（含畸形形态在内的任何值都不回显），定位靠 repo/token 摘要。"""
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_BASE_URL", raising=False)
+    client = CNBApiClient(token="t", repo="g/r", base_url="https://api.example.com")
+    assert "@" not in repr(client)
+    assert "http" not in repr(client)
+    assert "api.example.com" not in repr(client)
+    assert "g/r" in repr(client) and "sha256:" in repr(client)
+
+
+def test_credential_base_url_never_reaches_httpx(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """含凭据 base_url 被拒后，httpx 自身 INFO 日志（实测明文输出 URL 含密码）无任何请求行。"""
+    from cnb_agentic_memory import ConfigError
+
+    monkeypatch.delenv("CNB_AGENTIC_MEMORY_BASE_URL", raising=False)
+    with caplog.at_level("INFO", logger="httpx"):
+        with pytest.raises(ConfigError):
+            CNBApiClient(token="t", repo="g/r", base_url=f"https://u:{SECRET_MARKER}@h.cool")
+    assert "HTTP Request" not in caplog.text
+    assert SECRET_MARKER not in caplog.text
+
+
 async def test_env_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "env-token")
     monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "env/repo")
