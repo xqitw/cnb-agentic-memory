@@ -26,7 +26,7 @@ async with CNBApiClient(token="...", repo="group/memory") as client:
 | `CNB_AGENTIC_MEMORY_TIMEOUT` | 请求超时秒数 | `30` |
 | `CNB_AGENTIC_MEMORY_DEBUG` | 设为 1 时未预期异常抛出完整堆栈（默认友好一行，退出码 70） | 未设置 |
 
-`CNB_AGENTIC_MEMORY_BASE_URL`（及头覆盖 `X-CNB-Base-URL`）在构造期校验：必须以 `http://` 或 `https://` 开头，且不允许包含 userinfo（`@` 形式——CNB API 认证走 Bearer Token，见 `CNB_AGENTIC_MEMORY_TOKEN`）；校验失败抛 `ConfigError`。错误文案与日志一律不回显 base_url 原值（含 repr 与调试输出）。
+`CNB_AGENTIC_MEMORY_BASE_URL`（及头覆盖 `X-CNB-Base-URL`）在构造期校验：必须以 `http://` 或 `https://` 开头（大小写不敏感），且必须是「干净 origin」——不允许携带 userinfo（`@` 凭据段）、查询串或片段（CNB API 认证走 Bearer Token，见 `CNB_AGENTIC_MEMORY_TOKEN`）；校验失败抛 `ConfigError`。本工具的错误文案、repr 与日志一律不回显 base_url 原值（含解析失败时的异常链）；凭据形态的 base_url 在构造期即被拒绝，不会进入 httpx——httpx 自身的请求日志与第三方异常文案不在本条承诺范围内。
 
 ```python
 # 三种等价写法

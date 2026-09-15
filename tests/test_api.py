@@ -179,6 +179,10 @@ CREDENTIAL_OR_MALFORMED_BASE_URLS = [
     "https:/u:SECRET@h.cool",  # 单斜杠
     "https://u:p@ss@h.cool",  # 密码含 @
     "https://u:cy1zZWNyZXQ=@h.cool",  # base64 风格口令
+    "https://u:SECRET.h.cool",  # 漏 @ 手误（httpx 解析为非法端口，原文可入异常文案）
+    "https://u:SECRET＠h.cool",  # 全角 @（同为非法端口形态）
+    "https://u:p%40ss.host",  # 编码 @ 在口令（非法端口形态）
+    "https://api.cnb.cool?token=SECRET",  # query 携带凭据（httpx 日志明文输出 URL）
     "//h.cool",  # 无 scheme
     "///h.cool",  # 无 scheme 多斜杠
     "h.cool",  # 裸主机名
@@ -200,8 +204,24 @@ def test_credential_or_malformed_base_url_rejected_without_echo(
     assert SECRET_MARKER not in str(exc_info.value)
     assert probe not in str(exc_info.value)
     assert SECRET_MARKER not in caplog.text
+    # 解析失败的原异常不链入（__cause__ 文案自带原文，链入 DEBUG traceback 即回显）
+    assert exc_info.value.__cause__ is None
     # httpx 未被触达：凭据 URL 永不进入 httpx，其请求日志泄露面不可达
     assert "HTTP Request" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "HTTPS://api.cnb.cool",  # 大写 scheme（基线行为，不得因校验收窄回归）
+        "https://api.cnb.cool/@user",  # path 中的 @ 不属 userinfo，不得误拒
+        "https://h.cool/api",  # 带 path 的合法 origin
+    ],
+)
+def test_valid_base_url_variants_accepted(base_url: str) -> None:
+    """合法 base_url 形态（大写 scheme / path 含 @ / 带 path）构造期放行。"""
+    client = CNBApiClient(token="t", repo="g/r", base_url=base_url)
+    assert client.base_url == base_url.rstrip("/")
 
 
 def test_repr_omits_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
