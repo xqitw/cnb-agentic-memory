@@ -244,12 +244,24 @@ def _tool_guard(fn):
             # 含 pydantic.ValidationError（MRO 属 ValueError）——2xx 成功响应
             # 结构不符会落到此族，文案同按「响应形状」指引，不误报配置/网络
             logger.warning("工具调用请求期失败：%s", type(err).__name__, exc_info=True)
-            # UnicodeError 的 MRO 含 ValueError，必须先判，否则「调用方实参
-            # 不可编码」会被误归为上游响应问题，引智能体无谓重试
-            if isinstance(err, UnicodeError):
+            # Unicode*Error 的 MRO 含 ValueError，须先于下面分流，且两侧方向相反：
+            #   UnicodeEncodeError -> 调用方实参无法编码，病因在输入侧
+            #   其余 UnicodeError  -> 上游响应体编码异常（charset 与实体不符），
+            #                        调用方参数合法，病因在上游
+            # 判据必须收窄到 EncodeError 子类：用父类会把 decode 侧也归到
+            # 「请检查参数内容」，让参数正常的调用方去改参（#147 三审）。
+            if isinstance(err, UnicodeEncodeError):
                 raise ToolError(
                     f"输入包含无法编码的字符（{type(err).__name__}）——"
                     "请检查参数内容（如正文/标题/标签）是否含非法代理对或异常字符后重试"
+                ) from err
+            if isinstance(err, UnicodeError):
+                # 判 false 的 UnicodeEncodeError 已在上方返回；此处涵盖
+                # UnicodeDecodeError 及 httpx 直接抛出的基类 UnicodeError
+                # （实测 charset 异常时 httpx 抛的就是基类，非 DecodeError 子类）
+                raise ToolError(
+                    f"上游响应内容无法解码（{type(err).__name__}）——"
+                    "上游返回的编码与声明不符，请稍后重试；持续出现请检查 CNB 平台状态"
                 ) from err
             if isinstance(err, ValueError):
                 raise ToolError(

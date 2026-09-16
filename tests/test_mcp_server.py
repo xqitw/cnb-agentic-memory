@@ -1503,8 +1503,10 @@ def test_guard_known_family_no_detail_echo(monkeypatch: pytest.MonkeyPatch, capl
     assert secret not in text
     # UnicodeError 走「输入侧」文案（#147 复审 B5：其 MRO 属 ValueError，
     # 若不前置会被误归「上游」）；其余已知族走请求期/响应处理文案
+    # UnicodeError 基类走「上游解码」分支（httpx charset 异常的实测形态）；
+    # encode 侧（调用方实参）由 test_guard_encode_error_points_to_input 覆盖
     if label == "UnicodeError":
-        assert "输入包含无法编码的字符" in text
+        assert "上游响应内容无法解码" in text
     else:
         assert "请求期失败" in text or "响应处理失败" in text
     # 留痕断言：出口必须打 warning（否则长驻进程排障无痕）
@@ -1651,3 +1653,65 @@ def test_guard_value_error_still_reported_as_response_shape(
     text = str(exc_info.value)
     assert "响应处理失败" in text
     assert "上游响应结构可能不符预期" in text
+
+
+def test_guard_encode_error_points_to_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    """UnicodeEncodeError 指调用方输入侧（B5 正向）。"""
+    import asyncio
+    import unittest.mock as mock_mod
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    import cnb_agentic_memory.mcp_server as ms
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+
+    async def boom(*a, **kw):
+        raise UnicodeEncodeError("utf-8", "\ud800", 0, 1, "surrogates not allowed")
+
+    with mock_mod.patch.object(ms, "_client"):
+        with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
+            mem_cls.return_value.get = boom
+            with pytest.raises(ToolError) as exc_info:
+                asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert "输入包含无法编码的字符" in text
+    assert "上游" not in text
+
+
+def test_guard_decode_error_points_to_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """上游响应体解码失败须归上游侧，不得让参数正常的调用方去改参（#147 三审）。
+
+    httpx 在响应 charset 与实体不符时抛的是基类 UnicodeError（非
+    UnicodeDecodeError 子类），故判据不能用 EncodeError 之外的父类兜底，
+    也不能只判 DecodeError 子类。
+    """
+    import asyncio
+    import unittest.mock as mock_mod
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    import cnb_agentic_memory.mcp_server as ms
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+
+    async def boom(*a, **kw):
+        # 实测 httpx charset 异常时抛基类 UnicodeError
+        raise UnicodeError("UTF-16 stream does not start with BOM")
+
+    with mock_mod.patch.object(ms, "_client"):
+        with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
+            mem_cls.return_value.get = boom
+            with pytest.raises(ToolError) as exc_info:
+                asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert "上游响应内容无法解码" in text
+    assert "请检查参数内容" not in text  # 不得推给调用方
