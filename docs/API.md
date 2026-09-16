@@ -37,7 +37,7 @@ CNBApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
 
 ## 错误处理
 
-SDK 不做重试/限流——调用方（智能体）收到错误后自行决策。错误路径：`CNB 响应 → ApiError(message 截断至 500 字符) → MCP/CLI 出口`，SDK 全程不吞错、不包装语义。注意两个出口口径不同：**CLI 输出 `status_code + message`（含截断后的响应原文）**；**MCP 的 ③ 运行期异常出口只输出含类别的收敛文案，不回显响应体**（不可信中间层内容，见 docs/MCP.md ③）。**例外**：`MemoryRuleError` 走 ① 业务拒绝通道（`isError=false`）时，错误文本会拼入 `ApiError.message`（已截断至 500 字符，但仍是上游原文）——即 `memory_search` 检索失败与 `memory_write` 部分落盘失败两条路径**仍会回显截断后的响应原文**，该回显面与 base 同源，见 docs/MCP.md ③ 豁免清单。
+SDK 不做重试/限流——调用方（智能体）收到错误后自行决策。错误路径：`CNB 响应 → ApiError(message 截断至 500 字符) → MCP/CLI 出口`，SDK 全程不吞错、不包装语义。
 
 | 异常 | 含义 | 常见场景 |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ try:
 except MemoryRuleError as err:
     ...  # 业务规则失败，含回读校验失败
 except ApiError as err:
-    ...  # err.status_code / err.message 为 CNB 响应原文（截断至 500 字符；CLI 直接回显，MCP 仅由 ① 通道间接回显，见上方出口口径）
+    ...  # err.status_code / err.message 为 CNB 响应原文（截断至 500 字符）
 ```
 
 ## cnb_agentic_memory.api — CNB API 薄封装

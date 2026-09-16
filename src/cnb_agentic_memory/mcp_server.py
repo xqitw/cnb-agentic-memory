@@ -175,10 +175,8 @@ async def _client(ctx: Context | None):
                 "X-CNB-Token 与 X-CNB-Repo（HTTP 共享部署的多用户隔离要求），"
                 "匿名请求不再回落服务端环境变量凭据。"
             )
-    # token/repo 形态前置校验（#147 评审 B4）：必须在 acquire 之前——
-    # 池键由 _token_digest(token) 计算，其 token.encode() 先于 CNBApiClient
-    # 构造执行，含 lone surrogate 的 token 会在此抛 UnicodeEncodeError，
-    # 绕开构造期校验并把病因指向错误方向。用同一判据（单一来源）先拦。
+    # 入池前校验：池键需 token.encode()，会在客户端构造前就抛 UnicodeEncodeError，
+    # 绕开构造期校验，故须先拦（同一判据，单一来源）
     resolved_token = (overrides.get("token") or env("TOKEN") or "").strip()
     resolved_repo = (overrides.get("repo") or env("REPO") or "").strip()
     validate_token_repo(resolved_token, resolved_repo)
@@ -246,13 +244,8 @@ def _tool_guard(fn):
             # 含 pydantic.ValidationError（MRO 属 ValueError）——2xx 成功响应
             # 结构不符会落到此族，文案同按「响应形状」指引，不误报配置/网络
             logger.warning("工具调用请求期失败：%s", type(err).__name__, exc_info=True)
-            # UnicodeError 必须先于 ValueError 判：其 MRO 为
-            # UnicodeError → ValueError，若不前置会被下面的分支抢走，把
-            # 「调用方实参不可编码」误归为「上游响应结构不符」（#147 复审 B5：
-            # 智能体会拿永远不可能成功的非法实参反复重试上游）。
-            # 病因确实在调用方输入侧（如 memory.py 的 _byte_len /
-            # validate_label 对实参做 encode），文案据此指向输入侧，
-            # 不推给上游、不建议重试。
+            # UnicodeError 的 MRO 含 ValueError，必须先判，否则「调用方实参
+            # 不可编码」会被误归为上游响应问题，引智能体无谓重试
             if isinstance(err, UnicodeError):
                 raise ToolError(
                     f"输入包含无法编码的字符（{type(err).__name__}）——"

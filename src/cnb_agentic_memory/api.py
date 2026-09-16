@@ -74,20 +74,9 @@ class ApiError(Exception):
 def validate_token_repo(token: str, repo: str) -> None:
     """token / repo 形态前置校验（#99 ②③）：非法形态落 ConfigError，文案不回显原值。
 
-    抽离为模块级单一来源，供两条路径复用：
-
-    - `CNBApiClient._validate_config`（SDK / CLI 构造期）
-    - MCP 工具入口 `_client()`（#147 评审 B4）
-
-    后者必需独立调用：共享池按 token 摘要建键，`_token_digest` 的
-    `token.encode()` 在 `CNBApiClient` 构造**之前**执行——含 lone surrogate
-    的 token（协议入口 JSON 转义可送达）会在池键计算处抛 `UnicodeEncodeError`，
-    绕开构造期校验，且病因指向调用方输入编码之外的方向。入池前先校验即可闭合。
-
-    - token：`isascii() and isprintable()`（封非 ASCII / CR / LF / 制表）
-    - repo：`isprintable()` + 禁空白 / `?` / `#`
-    - 不拦非 ASCII repo：中文 slug 可由 httpx 按规范百分号编码正常发出，
-      拦它属功能回归（实测基准），故仅拦真实风险字符。
+    单一来源，供 CNBApiClient 构造期与 MCP 入池前共用——后者必需：
+    共享池按 token 摘要建键，`encode()` 先于客户端构造执行，非法 token
+    会绕开构造期校验。
     """
     if not (token.isascii() and token.isprintable()):
         raise ConfigError(
