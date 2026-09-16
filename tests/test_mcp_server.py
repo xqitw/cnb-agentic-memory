@@ -1501,7 +1501,12 @@ def test_guard_known_family_no_detail_echo(monkeypatch: pytest.MonkeyPatch, capl
 
     text = str(exc_info.value)
     assert secret not in text
-    assert "请求期失败" in text or "响应处理失败" in text
+    # UnicodeError 走「输入侧」文案（#147 复审 B5：其 MRO 属 ValueError，
+    # 若不前置会被误归「上游」）；其余已知族走请求期/响应处理文案
+    if label == "UnicodeError":
+        assert "输入包含无法编码的字符" in text
+    else:
+        assert "请求期失败" in text or "响应处理失败" in text
     # 留痕断言：出口必须打 warning（否则长驻进程排障无痕）
     assert any(r.levelname == "WARNING" for r in caplog.records)
 
@@ -1577,3 +1582,72 @@ def test_mcp_client_rejects_malformed_repo_before_pool(monkeypatch: pytest.Monke
 
     with pytest.raises(ConfigError, match="REPO 含换行/制表等控制字符"):
         asyncio.run(run())
+
+
+def test_guard_unicode_error_points_to_input_not_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """UnicodeError 文案须指向调用方输入侧，不得误归「上游」（#147 复审 B5）。
+
+    UnicodeError 的 MRO 为 UnicodeError -> ValueError，若 ValueError 分支
+    先判会把它抢走并报「上游响应结构可能不符预期」——而病因实际在调用方
+    实参编码（如 memory.py 的 _byte_len/validate_label 对实参 encode），
+    智能体会拿永远不可能成功的非法实参反复重试上游。本用例锁住分流顺序。
+    """
+    import asyncio
+    import unittest.mock as mock_mod
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    import cnb_agentic_memory.mcp_server as ms
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+
+    async def boom(*a, **kw):
+        # 真实形态：调用方实参含 lone surrogate，encode 时报同型异常
+        raise UnicodeEncodeError("utf-8", "\ud800", 0, 1, "surrogates not allowed")
+
+    with mock_mod.patch.object(ms, "_client"):
+        with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
+            mem_cls.return_value.get = boom
+            with pytest.raises(ToolError) as exc_info:
+                asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert "输入包含无法编码的字符" in text  # 指向输入侧
+    assert "上游" not in text  # 不得误归上游
+    assert "稍后重试" not in text  # 不得建议重试（重试不可能成功）
+
+
+def test_guard_value_error_still_reported_as_response_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """非 UnicodeError 的 ValueError（如 ValidationError）仍按「响应形状」分流（B5 回归护栏）。
+
+    前置 UnicodeError 分支不得吞掉 ValueError 族的既有语义。
+    """
+    import asyncio
+    import unittest.mock as mock_mod
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    import cnb_agentic_memory.mcp_server as ms
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+
+    async def boom(*a, **kw):
+        raise ValueError("shape mismatch")
+
+    with mock_mod.patch.object(ms, "_client"):
+        with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
+            mem_cls.return_value.get = boom
+            with pytest.raises(ToolError) as exc_info:
+                asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert "响应处理失败" in text
+    assert "上游响应结构可能不符预期" in text

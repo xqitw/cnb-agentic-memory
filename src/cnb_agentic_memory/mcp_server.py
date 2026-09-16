@@ -246,7 +246,19 @@ def _tool_guard(fn):
             # 含 pydantic.ValidationError（MRO 属 ValueError）——2xx 成功响应
             # 结构不符会落到此族，文案同按「响应形状」指引，不误报配置/网络
             logger.warning("工具调用请求期失败：%s", type(err).__name__, exc_info=True)
-            if isinstance(err, ValueError) and not isinstance(err, httpx.HTTPError):
+            # UnicodeError 必须先于 ValueError 判：其 MRO 为
+            # UnicodeError → ValueError，若不前置会被下面的分支抢走，把
+            # 「调用方实参不可编码」误归为「上游响应结构不符」（#147 复审 B5：
+            # 智能体会拿永远不可能成功的非法实参反复重试上游）。
+            # 病因确实在调用方输入侧（如 memory.py 的 _byte_len /
+            # validate_label 对实参做 encode），文案据此指向输入侧，
+            # 不推给上游、不建议重试。
+            if isinstance(err, UnicodeError):
+                raise ToolError(
+                    f"输入包含无法编码的字符（{type(err).__name__}）——"
+                    "请检查参数内容（如正文/标题/标签）是否含非法代理对或异常字符后重试"
+                ) from err
+            if isinstance(err, ValueError):
                 raise ToolError(
                     f"响应处理失败（{type(err).__name__}）——上游响应结构可能"
                     "不符预期，请稍后重试；持续出现请检查 CNB 平台状态"

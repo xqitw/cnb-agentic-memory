@@ -54,7 +54,7 @@ try:
 except MemoryRuleError as err:
     ...  # 业务规则失败，含回读校验失败
 except ApiError as err:
-    ...  # err.status_code / err.message 为 CNB 响应原文（截断至 500 字符，仅 CLI 通道回显）
+    ...  # err.status_code / err.message 为 CNB 响应原文（截断至 500 字符；CLI 直接回显，MCP 仅由 ① 通道间接回显，见上方出口口径）
 ```
 
 ## cnb_agentic_memory.api — CNB API 薄封装
