@@ -37,7 +37,7 @@ CNBApiClient(token="t", timeout=10)  # 混合：参数覆盖对应环境变量
 
 ## 错误处理
 
-SDK 不做重试/限流——调用方（智能体）收到错误后自行决策。错误路径：`CNB 响应 → ApiError(原文) → MCP/CLI 透传`，SDK 全程不吞错、不包装语义。
+SDK 不做重试/限流——调用方（智能体）收到错误后自行决策。错误路径：`CNB 响应 → ApiError(message 截断至 500 字符) → MCP/CLI 出口`，SDK 全程不吞错、不包装语义。注意两个出口口径不同：**CLI 输出 `status_code + message`（含截断后的响应原文）**；**MCP 只输出含类别的收敛文案，不回显响应体**（不可信中间层内容，见 docs/MCP.md ③）。
 
 | 异常 | 含义 | 常见场景 |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ try:
 except MemoryRuleError as err:
     ...  # 业务规则失败，含回读校验失败
 except ApiError as err:
-    ...  # err.status_code / err.message 为 CNB 响应原文
+    ...  # err.status_code / err.message 为 CNB 响应原文（截断至 500 字符，仅 CLI 通道回显）
 ```
 
 ## cnb_agentic_memory.api — CNB API 薄封装

@@ -17,6 +17,14 @@ from cnb_agentic_memory.mcp_server import _DIST_NAME, mcp
 BASE = "https://api.cnb.cool"
 
 
+class UnexpectedProbeError(Exception):
+    """兜底出口测试专用探针异常：落在 guard 已知族之外，触发兜底分支。
+
+    刻意不用 ExceptionGroup：该内置异常自 Python 3.11 起才存在，而本项目
+    声明下限为 3.10，在本环境该名未定义会先抛 NameError，样本到不了兜底出口。
+    """
+
+
 def issue_payload(number: int, title: str, body: str = "", state: str = "open") -> dict:
     return {
         "number": str(number),
@@ -1378,3 +1386,144 @@ def test_shared_client_pool_bounded_eviction(monkeypatch: pytest.MonkeyPatch) ->
         await pool.aclose()
 
     asyncio.run(scenario())
+
+
+# ---- #99 ④ guard 出口收敛用例 ----
+
+
+def _guarded_tool(name: str):
+    """按名取已注册工具的可调用原函数（绕过框架，直测 guard 出口）。"""
+    return next(t for t in mcp._tool_manager.list_tools() if t.name == name).fn
+
+
+def test_guard_api_error_upstream_failure(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    """非 2xx 上游故障出口：文案含状态码，不回显响应体，有 warning 留痕。"""
+    import asyncio
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues/1").respond(502, text="<html>" + "E" * 2000 + "</html>")
+        with caplog.at_level("WARNING", logger="cnb_agentic_memory.mcp_server"):
+            with pytest.raises(ToolError) as exc_info:
+                asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert "HTTP 502" in text
+    assert "<html>" not in text and "E" * 100 not in text
+    assert any("上游 API 错误" in r.message for r in caplog.records)
+
+
+def test_guard_2xx_parse_failure_not_reported_as_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """2xx 但响应无法解析：文案报「响应结构不符」，不得报「上游 API 错误」
+    与状态码自相矛盾、也不得报「检查配置与网络」这一方向错误的假病因。
+
+    端到端真链路（respx + 真实 client），确保 api 边界与 guard 出口一致。
+    """
+    import asyncio
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues/1").respond(200, text="<html>gateway</html>")
+        with pytest.raises(ToolError) as exc_info:
+            asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert "响应结构不符预期" in text
+    assert "上游 API 错误" not in text
+    assert "gateway" not in text and "<html>" not in text
+
+
+def test_guard_2xx_schema_mismatch_not_reported_as_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """2xx 结构不符（pydantic ValidationError，MRO 属 ValueError）：
+    不得落入「请检查配置与网络」——此刻配置与网络均正常。"""
+    import asyncio
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/g/r/-/issues/1").respond(200, json={"bad": "shape"})
+        with pytest.raises(ToolError) as exc_info:
+            asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert "请检查配置与网络" not in text
+
+
+@pytest.mark.parametrize(
+    ("label", "exc"),
+    [
+        ("InvalidURL", None),  # 下方构造
+        ("UnicodeError", UnicodeError("codec fail")),
+        ("OverflowError", OverflowError("int too big")),
+        ("OSError", OSError("broken pipe")),
+    ],
+)
+def test_guard_known_family_no_detail_echo(monkeypatch: pytest.MonkeyPatch, label, exc) -> None:
+    """已知请求期失败族（含非 HTTPError 族的 InvalidURL）：类别文案不回显 message。"""
+    import asyncio
+    import unittest.mock as mock_mod
+
+    import httpx as httpx_mod
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    import cnb_agentic_memory.mcp_server as ms
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+    secret = "inNer-dEta-ilS-42"
+    raised = exc if exc is not None else httpx_mod.InvalidURL(f"bad {secret}")
+
+    async def boom(*a, **kw):
+        raise raised
+
+    with mock_mod.patch.object(ms, "_client"):
+        with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
+            mem_cls.return_value.get = boom
+            with pytest.raises(ToolError) as exc_info:
+                asyncio.run(fn(number=1))
+
+    text = str(exc_info.value)
+    assert secret not in text
+    assert "请求期失败" in text or "响应处理失败" in text
+
+
+def test_guard_unexpected_exception_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """兜底出口：任意穿透异常转 ToolError 不炸栈（探针异常，非 3.11+ 内置）。"""
+    import asyncio
+    import unittest.mock as mock_mod
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    import cnb_agentic_memory.mcp_server as ms
+
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_TOKEN", "t")
+    monkeypatch.setenv("CNB_AGENTIC_MEMORY_REPO", "g/r")
+
+    fn = _guarded_tool("memory_get")
+
+    async def boom(*a, **kw):
+        raise UnexpectedProbeError("probe")
+
+    with mock_mod.patch.object(ms, "_client"):
+        with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
+            mem_cls.return_value.get = boom
+            with pytest.raises(ToolError) as exc_info:
+                asyncio.run(fn(number=1))
+
+    assert "UnexpectedProbeError" in str(exc_info.value)

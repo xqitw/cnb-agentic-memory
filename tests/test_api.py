@@ -312,3 +312,111 @@ async def test_timeout_enforced(client: CNBApiClient) -> None:
         mock.get("/group/repo/-/issues/1").mock(side_effect=httpx.ReadTimeout("timeout"))
         with pytest.raises(httpx.TimeoutException):
             await client.get_issue(1)
+
+
+# ---- #99 边界用例（错误出口安全边界） ----
+
+
+def test_api_error_message_truncated() -> None:
+    """ApiError 构造级截断：500KB 上游异常页不回灌上下文（#99 ①）。"""
+    from cnb_agentic_memory.api import API_ERROR_TEXT_LIMIT
+
+    err = ApiError(502, "E" * 500_000)
+    assert len(err.message) == API_ERROR_TEXT_LIMIT
+    assert len(str(err)) < API_ERROR_TEXT_LIMIT + 100
+
+
+async def test_non_2xx_body_truncated_not_replayed(client: CNBApiClient) -> None:
+    """非 2xx 超长响应体经 ApiError 构造级截断（覆盖所有构造路径）。"""
+    from cnb_agentic_memory.api import API_ERROR_TEXT_LIMIT
+
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/group/repo/-/issues/1").respond(502, text="X" * 500_000)
+        with pytest.raises(ApiError) as exc_info:
+            await client.get_issue(1)
+
+    assert len(exc_info.value.message) == API_ERROR_TEXT_LIMIT
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "tok\nen\ntoken",  # CR/LF：请求头注入 + 凭据明文入日志
+        "tok\ttoken",  # 制表符
+        "toK\xa0n",  # 非打印空白
+        "toK\u4e2d\u6587n",  # 非 ASCII：请求期 UnicodeEncodeError
+    ],
+)
+def test_malformed_token_rejected_before_request(token: str) -> None:
+    """非法 token 构造期即拒，不穿透到请求期（#99 ②）。"""
+    from cnb_agentic_memory import ConfigError
+
+    with pytest.raises(ConfigError, match="TOKEN 含非法字符"):
+        CNBApiClient(token=token, repo="g/r")
+
+
+@pytest.mark.parametrize(
+    "repo",
+    [
+        "g/r\nx",  # CR/LF
+        "g\tr",  # 制表符
+        "g\xa0r",  # 非打印空白
+    ],
+)
+def test_malformed_repo_rejected_before_request(repo: str) -> None:
+    """含控制字符/非打印字符的 repo 构造期即拒（#99 ③）。"""
+    from cnb_agentic_memory import ConfigError
+
+    with pytest.raises(ConfigError, match="REPO 含换行/制表等控制字符"):
+        CNBApiClient(token="t", repo=repo)
+
+
+@pytest.mark.parametrize("repo", ["g r", "g?token=x", "g#frag"])
+def test_repo_with_space_or_query_rejected(repo: str) -> None:
+    """repo 空白 / ?/# 构造期拒绝（凭据形态文本入 httpx 日志的通道）。"""
+    from cnb_agentic_memory import ConfigError
+
+    with pytest.raises(ConfigError, match="含空白"):
+        CNBApiClient(token="t", repo=repo)
+
+
+@pytest.mark.parametrize("repo", ["g/r\u4e2d\u6587", "\u7ec4\u7ec7/\u8bb0\u5fc6\u5e93"])
+def test_non_ascii_repo_accepted(repo: str) -> None:
+    """非 ASCII repo 必须可构造：slug 含中文时 httpx 按规范百分号编码发出，
+    构造期拒绝属功能回归（base 实测可正常发出请求）。"""
+    client = CNBApiClient(token="t", repo=repo)
+    assert client.repo == repo
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://h.cool:0", "https://h.cool:65536", "https://h.cool:99999"],
+)
+def test_out_of_range_port_rejected_at_construction(base_url: str) -> None:
+    """端口越界构造期拒绝（#99 ③）：httpx 对越界端口构造期不抛错，
+    会穿透到请求期以非 HTTPError 族异常失败。"""
+    from cnb_agentic_memory import ConfigError
+
+    with pytest.raises(ConfigError, match="端口越界"):
+        CNBApiClient(token="t", repo="g/r", base_url=base_url)
+
+
+def test_valid_port_accepted() -> None:
+    """合法端口不误拒。"""
+    client = CNBApiClient(token="t", repo="g/r", base_url="https://h.cool:8443")
+    assert client.base_url.endswith(":8443")
+
+
+def test_token_repo_error_no_value_echo() -> None:
+    """token/repo 校验文案不回显原值（对齐 base_url 校验既有约定）。"""
+    from cnb_agentic_memory import ConfigError
+
+    marker = "sEcReT-tOkEn-9x"
+    with pytest.raises(ConfigError) as exc_info:
+        CNBApiClient(token=f"t{marker}\nt", repo="g/r")
+    assert marker not in str(exc_info.value)
+
+    repo_marker = "sEcReT-rePo-7z"
+    with pytest.raises(ConfigError) as exc_info:
+        CNBApiClient(token="t", repo=f"g{repo_marker}\nr")
+    assert repo_marker not in str(exc_info.value)

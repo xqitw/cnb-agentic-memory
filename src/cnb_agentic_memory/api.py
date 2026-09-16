@@ -32,6 +32,7 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.cnb.cool"
+API_ERROR_TEXT_LIMIT = 500
 DEFAULT_TIMEOUT = 30.0
 
 
@@ -54,16 +55,19 @@ class ConfigError(Exception):
 
 
 class ApiError(Exception):
-    """CNB API 错误（响应体原样保留，由调用方决定后续处理）。
+    """CNB API 错误（响应体截断保留，由调用方决定后续处理）。
 
     - status_code：HTTP 状态码
-    - message：服务端响应原文（如 {"errcode":404,"errmsg":"..."}）
+    - message：服务端响应原文（如 {"errcode":404,"errmsg":"..."}），
+      截断至 API_ERROR_TEXT_LIMIT——错误文案会进入智能体上下文
+      （MCP isError 文本 / CLI stderr / 日志），无界回灌既污染上下文，
+      也给不可信中间层留注入面（#99 ①）
     """
 
     def __init__(self, status_code: int, message: str) -> None:
         self.status_code = status_code
-        self.message = message
-        super().__init__(f"CNB API {status_code}: {message}")
+        self.message = message[:API_ERROR_TEXT_LIMIT]
+        super().__init__(f"CNB API {status_code}: {self.message}")
 
 
 def _first_header(lowered: dict[str, list[str]], name: str) -> str | None:
@@ -347,6 +351,25 @@ class CNBApiClient:
             missing.append("CNB_AGENTIC_MEMORY_REPO（记忆仓库 slug，如 group/memory）")
         if missing:
             raise ConfigError("缺少必需配置：" + "、".join(missing))
+        # token / repo 形态前置校验（#99 ②③）：非法字符在请求期才炸
+        # （UnicodeEncodeError / LocalProtocolError / 头注入），且错误文案与
+        # 日志会携带凭据明文。构造期即拒绝，文案不回显原值（对齐下方
+        # base_url 校验「只描述原因、不回显原值」的既有约定）
+        if not (self.token.isascii() and self.token.isprintable()):
+            raise ConfigError(
+                "CNB_AGENTIC_MEMORY_TOKEN 含非法字符（非 ASCII 或换行/制表等控制字符）——"
+                "请检查令牌是否复制完整（不含空行或多余字符）后重试"
+            )
+        if not self.repo.isprintable():
+            raise ConfigError(
+                "CNB_AGENTIC_MEMORY_REPO 含换行/制表等控制字符——"
+                "slug 形如 group/repo，请检查是否复制完整后重试"
+            )
+        if any(ch.isspace() for ch in self.repo) or "?" in self.repo or "#" in self.repo:
+            raise ConfigError(
+                "CNB_AGENTIC_MEMORY_REPO 含空白或 ?/# 字符——"
+                "slug 形如 group/repo（不含空格、换行、查询串/片段），请修正后重试"
+            )
         if not self.base_url.lower().startswith(("http://", "https://")):
             # 前缀规则确定性拦截带引号/全角冒号/单斜杠/无 scheme 等畸形形态，
             # 不做形态枚举（实测 httpx.URL 下多数畸形并不抛异常，枚举不可收敛）
@@ -365,6 +388,9 @@ class CNBApiClient:
         try:
             parsed = httpx.URL(self.base_url)
             host = parsed.host  # host 属性触发 IDNA 解码，畸形标签统一在此转 ConfigError
+            # port 同为属性求值：畸形端口在此统一转 ConfigError（与 host 同一安全边界，
+            # 出 try 后再求值会重开逃逸面——#146 评审实测基准）
+            port = parsed.port
         except Exception:
             raise ConfigError(
                 "base_url 不是合法的 URL 形态（含无法解析的端口或主机字符），请修正后重试"
@@ -381,6 +407,10 @@ class CNBApiClient:
                 "CNB API 认证走 Bearer Token（CNB_AGENTIC_MEMORY_TOKEN），"
                 "请去除 URL 中的用户信息后重试"
             )
+        # 端口范围前置校验（#99 ③）：实测 httpx 0.28 对越界端口（0 / 65536+）
+        # 构造期不抛错，会穿透到请求期以非 HTTPError 族异常失败
+        if port is not None and not (1 <= port <= 65535):
+            raise ConfigError("base_url 端口越界（须在 1-65535 之间）——请修正后重试")
 
     def _path(self, suffix: str) -> str:
         """拼接 API 路径：/{repo}/-/{suffix}。"""

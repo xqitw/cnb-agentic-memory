@@ -25,6 +25,7 @@ from email.message import Message
 from importlib.metadata import PackageNotFoundError, metadata
 from typing import Any, cast
 
+import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -32,6 +33,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from . import __version__
 from .api import (
+    ApiError,
     ConfigError,
     SharedClientPool,
     env,
@@ -207,6 +209,44 @@ def _tool_guard(fn):
         except ConfigError as err:
             logger.warning("工具调用因配置问题被拒：%s", err)
             raise ToolError(str(err)) from err
+        except ApiError as err:
+            # 上游错误：message 已在构造期截断（API_ERROR_TEXT_LIMIT），但
+            # 上游页仍是不可信内容，出口只透出状态码不回显响应体（#99 ①）。
+            # 按状态码分流文案（#146 评审）：2xx 说明链路正常、故障面是响应
+            # 形状不符，报「上游 API 错误」会与状态码自相矛盾
+            logger.warning("工具调用遇上游 API 错误：%s", err, exc_info=True)
+            if err.status_code >= 400:
+                raise ToolError(
+                    f"上游 API 错误（HTTP {err.status_code}），请稍后重试或检查网络与配置"
+                ) from err
+            raise ToolError(
+                f"上游响应结构不符预期（HTTP {err.status_code} 但内容无法解析），"
+                "请稍后重试；持续出现请检查 CNB 平台状态与版本兼容性"
+            ) from err
+        except (
+            httpx.HTTPError,
+            httpx.InvalidURL,
+            UnicodeError,
+            ValueError,
+            OverflowError,
+            OSError,
+        ) as err:
+            # 已知请求期失败族：类型名可判别（网络/编码/参数形态），message
+            # 可能携带 URL/主机等内部细节，一律不回显。
+            # 含 pydantic.ValidationError（MRO 属 ValueError）——2xx 成功响应
+            # 结构不符会落到此族，文案同按「响应形状」指引，不误报配置/网络
+            logger.warning("工具调用请求期失败：%s", type(err).__name__, exc_info=True)
+            if isinstance(err, ValueError) and not isinstance(err, httpx.HTTPError):
+                raise ToolError(
+                    f"响应处理失败（{type(err).__name__}）——上游响应结构可能"
+                    "不符预期，请稍后重试；持续出现请检查 CNB 平台状态"
+                ) from err
+            raise ToolError(f"请求期失败（{type(err).__name__}），请检查配置与网络后重试") from err
+        except Exception as err:
+            # 兜底：任何穿透异常都不得退化为框架笼统文案，统一 warning 留痕 +
+            # 类别文案（不含 message，防泄漏）
+            logger.warning("工具调用意外失败：%s", type(err).__name__, exc_info=True)
+            raise ToolError(f"工具执行失败（{type(err).__name__}），请重试或联系服务维护者") from err
 
     return wrapper
 
