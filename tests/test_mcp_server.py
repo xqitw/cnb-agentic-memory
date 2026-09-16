@@ -1472,8 +1472,8 @@ def test_guard_2xx_schema_mismatch_not_reported_as_config(monkeypatch: pytest.Mo
         ("OSError", OSError("broken pipe")),
     ],
 )
-def test_guard_known_family_no_detail_echo(monkeypatch: pytest.MonkeyPatch, label, exc) -> None:
-    """已知请求期失败族（含非 HTTPError 族的 InvalidURL）：类别文案不回显 message。"""
+def test_guard_known_family_no_detail_echo(monkeypatch: pytest.MonkeyPatch, caplog, label, exc) -> None:
+    """已知请求期失败族（含非 HTTPError 族的 InvalidURL）：类别文案不回显 message，且有 warning 留痕。"""
     import asyncio
     import unittest.mock as mock_mod
 
@@ -1495,16 +1495,19 @@ def test_guard_known_family_no_detail_echo(monkeypatch: pytest.MonkeyPatch, labe
     with mock_mod.patch.object(ms, "_client"):
         with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
             mem_cls.return_value.get = boom
-            with pytest.raises(ToolError) as exc_info:
-                asyncio.run(fn(number=1))
+            with caplog.at_level("WARNING", logger="cnb_agentic_memory.mcp_server"):
+                with pytest.raises(ToolError) as exc_info:
+                    asyncio.run(fn(number=1))
 
     text = str(exc_info.value)
     assert secret not in text
     assert "请求期失败" in text or "响应处理失败" in text
+    # 留痕断言：出口必须打 warning（否则长驻进程排障无痕）
+    assert any(r.levelname == "WARNING" for r in caplog.records)
 
 
-def test_guard_unexpected_exception_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """兜底出口：任意穿透异常转 ToolError 不炸栈（探针异常，非 3.11+ 内置）。"""
+def test_guard_unexpected_exception_fallback(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    """兜底出口：任意穿透异常转 ToolError 不炸栈，且有 warning 留痕。"""
     import asyncio
     import unittest.mock as mock_mod
 
@@ -1523,7 +1526,54 @@ def test_guard_unexpected_exception_fallback(monkeypatch: pytest.MonkeyPatch) ->
     with mock_mod.patch.object(ms, "_client"):
         with mock_mod.patch("cnb_agentic_memory.mcp_server.Memory") as mem_cls:
             mem_cls.return_value.get = boom
-            with pytest.raises(ToolError) as exc_info:
-                asyncio.run(fn(number=1))
+            with caplog.at_level("WARNING", logger="cnb_agentic_memory.mcp_server"):
+                with pytest.raises(ToolError) as exc_info:
+                    asyncio.run(fn(number=1))
 
     assert "UnexpectedProbeError" in str(exc_info.value)
+    # 留痕断言：兜底出口同样必须打 warning
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_mcp_client_rejects_malformed_token_before_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MCP 工具入口在入池前拒绝非法 token（#147 评审 B4）。
+
+    共享池按 token 摘要建键，`_token_digest` 的 token.encode() 先于
+    CNBApiClient 构造执行——含 lone surrogate 的 token（协议入口 JSON 转义
+    可送达）会在池键计算处抛 UnicodeEncodeError，绕开构造期校验。本用例
+    锁住「入池前校验」这一不变量。
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    import cnb_agentic_memory.mcp_server as ms
+    from cnb_agentic_memory import ConfigError
+
+    # lone surrogate：协议入口 JSON 转义解码后的形态，经凭据头送达
+    # （os.environ 不接受 surrogate，故走真实头覆盖路径）
+    ctx = SimpleNamespace(headers={"x-cnb-token": "\ud800evil", "x-cnb-repo": "g/r"})
+
+    async def run():
+        async with ms._client(ctx):
+            return "不应到达"
+
+    with pytest.raises(ConfigError, match="TOKEN 含非法字符"):
+        asyncio.run(run())
+
+
+def test_mcp_client_rejects_malformed_repo_before_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MCP 工具入口在入池前拒绝含控制字符的 repo（#147 评审 B4）。"""
+    import asyncio
+    from types import SimpleNamespace
+
+    import cnb_agentic_memory.mcp_server as ms
+    from cnb_agentic_memory import ConfigError
+
+    ctx = SimpleNamespace(headers={"x-cnb-token": "t", "x-cnb-repo": "g/r\nx"})
+
+    async def run():
+        async with ms._client(ctx):
+            return "不应到达"
+
+    with pytest.raises(ConfigError, match="REPO 含换行/制表等控制字符"):
+        asyncio.run(run())

@@ -318,12 +318,16 @@ async def test_timeout_enforced(client: CNBApiClient) -> None:
 
 
 def test_api_error_message_truncated() -> None:
-    """ApiError 构造级截断：500KB 上游异常页不回灌上下文（#99 ①）。"""
-    from cnb_agentic_memory.api import API_ERROR_TEXT_LIMIT
+    """ApiError 构造级截断：500KB 上游异常页不回灌上下文（#99 ①）。
 
+    断言与常量**解耦**：不复用 API_ERROR_TEXT_LIMIT 自证——那样改常量时断言
+    两边同步变、永远成立，等于「撤销本 PR 核心目的却不报警」（评审实测：
+    阈值改 500_000 后 210 全绿）。改用硬上限表达安全目标。
+    """
     err = ApiError(502, "E" * 500_000)
-    assert len(err.message) == API_ERROR_TEXT_LIMIT
-    assert len(str(err)) < API_ERROR_TEXT_LIMIT + 100
+    assert len(err.message) <= 1000, "500KB 输入必须被截断（阈值不得大于 1000）"
+    assert len(err.message) < len("E" * 500_000) // 100, "截断后须远小于原始输入"
+    assert len(str(err)) < 2000
 
 
 async def test_non_2xx_body_truncated_not_replayed(client: CNBApiClient) -> None:

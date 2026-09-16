@@ -6,7 +6,8 @@
 - 工具描述内嵌使用指导（title 撰写规范等），供智能体理解调用方式
 - 错误处理：MemoryRuleError 转为 {"error": ...} 正常结果文本（isError=false，
   按 error 字段判别）；ConfigError 转 ToolError（协议级 isError=true，全文上行）；
-  未捕获 ApiError 被框架包装为笼统文案（isError=true，明细仅服务端日志）——
+  其余运行期异常（ApiError / 请求期失败族 / 未预期错误）经 _tool_guard 统一
+  收敛为含类别的 ToolError（isError=true，不回显响应体，均 warning 留痕）——
   智能体按类别自行决策重试或降级
 - 配置优先级：请求头（X-CNB-Token/X-CNB-Repo/X-CNB-Base-URL，多用户共享部署时
   每请求覆盖）> CNB_AGENTIC_MEMORY_ 环境变量；stdio 下无请求头，自然回落环境变量
@@ -38,6 +39,7 @@ from .api import (
     SharedClientPool,
     env,
     resolve_overrides_from_headers,
+    validate_token_repo,
 )
 from .memory import Memory, MemoryRuleError, SearchResult, WriteResult
 
@@ -173,6 +175,14 @@ async def _client(ctx: Context | None):
                 "X-CNB-Token 与 X-CNB-Repo（HTTP 共享部署的多用户隔离要求），"
                 "匿名请求不再回落服务端环境变量凭据。"
             )
+    # token/repo 形态前置校验（#147 评审 B4）：必须在 acquire 之前——
+    # 池键由 _token_digest(token) 计算，其 token.encode() 先于 CNBApiClient
+    # 构造执行，含 lone surrogate 的 token 会在此抛 UnicodeEncodeError，
+    # 绕开构造期校验并把病因指向错误方向。用同一判据（单一来源）先拦。
+    resolved_token = (overrides.get("token") or env("TOKEN") or "").strip()
+    resolved_repo = (overrides.get("repo") or env("REPO") or "").strip()
+    validate_token_repo(resolved_token, resolved_repo)
+
     client = await _client_pool.acquire(
         token=overrides.get("token"),
         repo=overrides.get("repo"),

@@ -1,8 +1,9 @@
 """CNB Open API 薄封装（httpx 异步客户端）。
 
 设计约定（均经实测确认）：
-- 仅封装 8 个端点，无重试/限流/Provider 抽象，错误原样抛给调用方（智能体自行决策重试）
-- 非 2xx 抛 ApiError，响应体原样保留
+- 仅封装 8 个端点，无重试/限流/Provider 抽象，错误抛给调用方（智能体自行决策重试）
+- 非 2xx 抛 ApiError，响应体**截断至 API_ERROR_TEXT_LIMIT**（防上游异常页
+  无界回灌智能体上下文，见 #99 ①）
 - 所有请求必须带 Accept: application/json，否则服务端返回 406（实测踩坑）
 - 配置优先级：显式参数 > CNB_AGENTIC_MEMORY_ 前缀环境变量 > 默认值
 """
@@ -68,6 +69,40 @@ class ApiError(Exception):
         self.status_code = status_code
         self.message = message[:API_ERROR_TEXT_LIMIT]
         super().__init__(f"CNB API {status_code}: {self.message}")
+
+
+def validate_token_repo(token: str, repo: str) -> None:
+    """token / repo 形态前置校验（#99 ②③）：非法形态落 ConfigError，文案不回显原值。
+
+    抽离为模块级单一来源，供两条路径复用：
+
+    - `CNBApiClient._validate_config`（SDK / CLI 构造期）
+    - MCP 工具入口 `_client()`（#147 评审 B4）
+
+    后者必需独立调用：共享池按 token 摘要建键，`_token_digest` 的
+    `token.encode()` 在 `CNBApiClient` 构造**之前**执行——含 lone surrogate
+    的 token（协议入口 JSON 转义可送达）会在池键计算处抛 `UnicodeEncodeError`，
+    绕开构造期校验，且病因指向调用方输入编码之外的方向。入池前先校验即可闭合。
+
+    - token：`isascii() and isprintable()`（封非 ASCII / CR / LF / 制表）
+    - repo：`isprintable()` + 禁空白 / `?` / `#`
+    - 不拦非 ASCII repo：中文 slug 可由 httpx 按规范百分号编码正常发出，
+      拦它属功能回归（实测基准），故仅拦真实风险字符。
+    """
+    if not (token.isascii() and token.isprintable()):
+        raise ConfigError(
+            "CNB_AGENTIC_MEMORY_TOKEN 含非法字符（非 ASCII 或换行/制表等控制字符）——"
+            "请检查令牌是否复制完整（不含空行或多余字符）后重试"
+        )
+    if not repo.isprintable():
+        raise ConfigError(
+            "CNB_AGENTIC_MEMORY_REPO 含换行/制表等控制字符——slug 形如 group/repo，请检查是否复制完整后重试"
+        )
+    if any(ch.isspace() for ch in repo) or "?" in repo or "#" in repo:
+        raise ConfigError(
+            "CNB_AGENTIC_MEMORY_REPO 含空白或 ?/# 字符——"
+            "slug 形如 group/repo（不含空格、换行、查询串/片段），请修正后重试"
+        )
 
 
 def _first_header(lowered: dict[str, list[str]], name: str) -> str | None:
@@ -355,21 +390,7 @@ class CNBApiClient:
         # （UnicodeEncodeError / LocalProtocolError / 头注入），且错误文案与
         # 日志会携带凭据明文。构造期即拒绝，文案不回显原值（对齐下方
         # base_url 校验「只描述原因、不回显原值」的既有约定）
-        if not (self.token.isascii() and self.token.isprintable()):
-            raise ConfigError(
-                "CNB_AGENTIC_MEMORY_TOKEN 含非法字符（非 ASCII 或换行/制表等控制字符）——"
-                "请检查令牌是否复制完整（不含空行或多余字符）后重试"
-            )
-        if not self.repo.isprintable():
-            raise ConfigError(
-                "CNB_AGENTIC_MEMORY_REPO 含换行/制表等控制字符——"
-                "slug 形如 group/repo，请检查是否复制完整后重试"
-            )
-        if any(ch.isspace() for ch in self.repo) or "?" in self.repo or "#" in self.repo:
-            raise ConfigError(
-                "CNB_AGENTIC_MEMORY_REPO 含空白或 ?/# 字符——"
-                "slug 形如 group/repo（不含空格、换行、查询串/片段），请修正后重试"
-            )
+        validate_token_repo(self.token, self.repo)
         if not self.base_url.lower().startswith(("http://", "https://")):
             # 前缀规则确定性拦截带引号/全角冒号/单斜杠/无 scheme 等畸形形态，
             # 不做形态枚举（实测 httpx.URL 下多数畸形并不抛异常，枚举不可收敛）
@@ -424,7 +445,7 @@ class CNBApiClient:
         params: dict[str, Any] | None = None,
         json_body: Any = None,
     ) -> Any:
-        """发请求；非 2xx 抛 ApiError（响应体原样保留），成功返回 JSON。"""
+        """发请求；非 2xx 抛 ApiError（响应体经构造级截断保留），成功返回 JSON。"""
         resp = await self.client.request(method, path, params=params, json=json_body)
         if resp.status_code >= 400:
             raise ApiError(resp.status_code, resp.text)
